@@ -26,20 +26,20 @@ const records = loadRecords();
 // ---------- 날짜 ----------
 const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 const PARTS = ["가슴", "등", "하체", "어깨", "팔", "복근", "유산소", "기타"];
+// 달력 라벨용 부위 색 (style.css의 .part--N 과 순서가 같음)
+const partClass = (part) => {
+  const i = PARTS.indexOf(part);
+  return i === -1 ? "part--none" : `part--${i}`;
+};
 
 const key = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const formatDate = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY_NAMES[d.getDay()]})`;
-
-function startOfWeek(d) {
-  const s = new Date(d);
-  s.setDate(s.getDate() - s.getDay());
-  return s;
-}
+const isValidKey = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && key(parseKey(k)) === k;
 
 const today = new Date();
 let selected = new Date(today);
-let weekStart = startOfWeek(today);
+let calMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
 const $ = (id) => document.getElementById(id);
 
@@ -95,31 +95,102 @@ function findLastRecord(name, beforeKey, { excludeId = null, sameDay = false } =
   return null;
 }
 
-// ---------- 화면 그리기 ----------
-function renderWeek() {
-  const week = $("week");
-  week.innerHTML = "";
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + i);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "day";
-    if (key(d) === key(today)) btn.classList.add("is-today");
-    if (key(d) === key(selected)) btn.classList.add("is-selected");
-    if (records[key(d)]?.length) btn.classList.add("has-record");
-    btn.innerHTML = `<span class="day__name">${DAY_NAMES[i]}</span><span class="day__num">${d.getDate()}</span><span class="day__dot"></span>`;
-    btn.addEventListener("click", () => {
-      selected = d;
-      render();
-    });
-    const li = document.createElement("li");
-    li.appendChild(btn);
-    week.appendChild(li);
+// 그날 한 부위 (기록 순서대로, 중복 없이). 부위를 안 고른 운동만 있으면 "운동"
+function partsOfDay(dateKey) {
+  const list = records[dateKey] || [];
+  const parts = [...new Set(list.map((ex) => ex.part).filter(Boolean))];
+  if (!parts.length && list.length) parts.push("운동");
+  return parts;
+}
+
+// ---------- 달력 화면 ----------
+// 칸이 좁아서 라벨은 최대 3줄: 3개 이하면 모두, 넘으면 2개 + "+N"
+const MAX_LABELS = 3;
+
+function renderCalendar() {
+  const y = calMonth.getFullYear();
+  const m = calMonth.getMonth();
+  $("monthLabel").textContent = `${y}년 ${m + 1}월`;
+
+  const firstDay = new Date(y, m, 1).getDay();
+  const lastDate = new Date(y, m + 1, 0).getDate();
+  const todayKey = key(today);
+  const cells = [];
+
+  for (let i = 0; i < firstDay; i++) cells.push(`<li class="cal-cell cal-cell--empty"></li>`);
+
+  for (let d = 1; d <= lastDate; d++) {
+    const date = new Date(y, m, d);
+    const k = key(date);
+    const parts = partsOfDay(k);
+    const shown = parts.length > MAX_LABELS ? parts.slice(0, MAX_LABELS - 1) : parts;
+    const more = parts.length - shown.length;
+    const weekday = date.getDay();
+    const cls = ["cal-day"];
+    if (k === todayKey) cls.push("is-today");
+    if (weekday === 0) cls.push("is-sun");
+    if (weekday === 6) cls.push("is-sat");
+
+    const label = `${formatDate(date)}${parts.length ? `, ${parts.join(", ")}` : ""}`;
+    cells.push(`
+      <li class="cal-cell">
+        <button type="button" class="${cls.join(" ")}" data-date="${k}" aria-label="${escapeHtml(label)}">
+          <span class="cal-day__num">${d}</span>
+          <span class="cal-day__labels">
+            ${shown.map((p) => `<span class="part ${partClass(p)}">${escapeHtml(p)}</span>`).join("")}
+            ${more ? `<span class="part part--more">+${more}</span>` : ""}
+          </span>
+        </button>
+      </li>`);
   }
-  const mid = new Date(weekStart);
-  mid.setDate(mid.getDate() + 3);
-  $("monthLabel").textContent = `${mid.getFullYear()}년 ${mid.getMonth() + 1}월`;
+  $("calendarGrid").innerHTML = cells.join("");
+  renderPlan();
+}
+
+// "오늘 뭐 할까": 부위별 마지막으로 한 날을 오래된 순으로 (오늘까지의 기록 기준)
+function renderPlan() {
+  const todayKey = key(today);
+  const lastByPart = new Map();
+  for (const date of Object.keys(records).sort()) {
+    if (date > todayKey) break;
+    for (const ex of records[date]) if (ex.part) lastByPart.set(ex.part, date);
+  }
+
+  const items = [...lastByPart]
+    .map(([part, date]) => ({ part, days: daysBetween(date, todayKey) }))
+    .sort((a, b) => b.days - a.days || PARTS.indexOf(a.part) - PARTS.indexOf(b.part));
+
+  $("planList").innerHTML = items.length
+    ? items
+        .map(
+          (x, i) => `
+        <li class="plan__item${i === 0 ? " is-top" : ""}">
+          <span class="part ${partClass(x.part)}">${escapeHtml(x.part)}</span>
+          <span class="plan__days">${x.days === 0 ? "오늘" : `${x.days}일 전`}</span>
+        </li>`
+        )
+        .join("")
+    : `<li class="plan__empty">운동할 때 부위를 고르면 여기에 정리돼요.</li>`;
+}
+
+$("calendarGrid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".cal-day");
+  if (btn) goToDay(btn.dataset.date);
+});
+
+$("prevMonth").addEventListener("click", () => {
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);
+  renderCalendar();
+});
+$("nextMonth").addEventListener("click", () => {
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1);
+  renderCalendar();
+});
+$("todayBtn").addEventListener("click", () => goToDay(key(today)));
+
+// ---------- 하루 기록 화면 ----------
+function renderDayHeader() {
+  $("dayTitle").textContent = formatDate(selected);
 }
 
 function renderList() {
@@ -170,18 +241,59 @@ function renderList() {
 }
 
 function render() {
-  renderWeek();
+  renderCalendar();
+  renderDayHeader();
   renderList();
 }
 
-$("prevWeek").addEventListener("click", () => {
-  weekStart.setDate(weekStart.getDate() - 7);
-  renderWeek();
-});
-$("nextWeek").addEventListener("click", () => {
-  weekStart.setDate(weekStart.getDate() + 7);
-  renderWeek();
-});
+// 이전 날/다음 날은 기록을 남기지 않고(replace) 바꿔서, 뒤로가기 한 번이면 달력으로 돌아감
+function shiftDay(delta) {
+  const d = new Date(selected);
+  d.setDate(d.getDate() + delta);
+  location.replace(`#/day/${key(d)}`);
+}
+$("prevDay").addEventListener("click", () => shiftDay(-1));
+$("nextDay").addEventListener("click", () => shiftDay(1));
+
+// ---------- 화면 이동 (해시 라우팅) ----------
+// #/day/YYYY-MM-DD → 기록 화면, 그 외 → 달력 화면
+// 해시를 쓰면 file://로 열어도 폰/브라우저 뒤로가기가 그대로 동작함
+let enteredFromCalendar = false;
+
+function goToDay(dateKey) {
+  enteredFromCalendar = true;
+  location.hash = `#/day/${dateKey}`;
+}
+
+function goToCalendar() {
+  // 달력에서 들어왔으면 뒤로가기와 똑같이 처리해서 기록이 쌓이지 않게 함
+  if (enteredFromCalendar) history.back();
+  else location.replace("#/");
+}
+$("backBtn").addEventListener("click", goToCalendar);
+
+function route() {
+  closeSheet();
+  const match = location.hash.match(/^#\/day\/(\d{4}-\d{2}-\d{2})$/);
+
+  if (match && isValidKey(match[1])) {
+    selected = parseKey(match[1]);
+    $("calendarView").hidden = true;
+    $("dayView").hidden = false;
+    renderDayHeader();
+    renderList();
+  } else {
+    enteredFromCalendar = false;
+    // 기록 화면에서 다른 달로 넘어갔다면 그 달을 보여줌
+    calMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
+    $("dayView").hidden = true;
+    $("calendarView").hidden = false;
+    renderCalendar();
+  }
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener("hashchange", route);
 
 // ---------- 토스트 ----------
 let toastTimer;
@@ -504,4 +616,4 @@ deleteBtn.addEventListener("click", () => {
   render();
 });
 
-render();
+route();

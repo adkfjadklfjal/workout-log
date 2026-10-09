@@ -9,18 +9,49 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
-    <!-- 상단: 날짜 선택 -->
+  <!-- ========== 달력 화면 ========== -->
+  <div class="app" id="calendarView">
     <header class="date-bar">
       <div class="date-bar__top">
-        <button class="icon-btn" id="prevWeek" aria-label="이전 주">‹</button>
-        <h1 class="date-bar__title" id="monthLabel">2026년 10월</h1>
-        <button class="icon-btn" id="nextWeek" aria-label="다음 주">›</button>
+        <button class="icon-btn" id="prevMonth" type="button" aria-label="이전 달">‹</button>
+        <h1 class="date-bar__title" id="monthLabel"></h1>
+        <button class="icon-btn" id="nextMonth" type="button" aria-label="다음 달">›</button>
       </div>
-      <ol class="week" id="week" aria-label="날짜 선택"></ol>
     </header>
 
-    <!-- 가운데: 오늘 운동 목록 -->
+    <main class="content content--calendar">
+      <section class="plan" aria-labelledby="planTitle">
+        <h2 class="plan__title" id="planTitle">오늘 뭐 할까</h2>
+        <p class="plan__desc">부위별로 마지막으로 한 날 · 오래된 순</p>
+        <ol class="plan__list" id="planList"></ol>
+      </section>
+
+      <div class="calendar">
+        <ol class="calendar__weekdays" aria-hidden="true">
+          <li>일</li><li>월</li><li>화</li><li>수</li><li>목</li><li>금</li><li>토</li>
+        </ol>
+        <ol class="calendar__grid" id="calendarGrid"></ol>
+      </div>
+      <button class="ghost-btn today-btn" id="todayBtn" type="button">오늘 기록하기</button>
+    </main>
+  </div>
+
+  <!-- ========== 하루 기록 화면 ========== -->
+  <div class="app" id="dayView" hidden>
+    <header class="date-bar">
+      <div class="date-bar__top date-bar__top--day">
+        <button class="back-btn" id="backBtn" type="button" aria-label="달력으로 돌아가기">
+          <span aria-hidden="true">‹</span> 달력
+        </button>
+        <div class="day-nav">
+          <button class="icon-btn" id="prevDay" type="button" aria-label="이전 날">‹</button>
+          <h1 class="date-bar__title" id="dayTitle"></h1>
+          <button class="icon-btn" id="nextDay" type="button" aria-label="다음 날">›</button>
+        </div>
+        <span class="back-btn back-btn--spacer" aria-hidden="true"></span>
+      </div>
+    </header>
+
     <main class="content">
       <div class="summary">
         <div>

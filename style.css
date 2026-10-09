@@ -51,7 +51,7 @@ ol, ul { list-style: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  min-height: 40px;
 }
 
 .date-bar__title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
@@ -64,32 +64,6 @@ ol, ul { list-style: none; }
   color: var(--text-sub);
 }
 .icon-btn:active { background: var(--bg); }
-
-.week {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
-
-.day {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 8px 0;
-  border-radius: 14px;
-  min-height: 60px;
-}
-.day__name { font-size: 12px; color: var(--text-sub); }
-.day__num  { font-size: 17px; font-weight: 600; }
-.day__dot  { width: 5px; height: 5px; border-radius: 50%; background: transparent; }
-.day.has-record .day__dot { background: var(--green); }
-.day.is-today .day__num { color: var(--green); }
-.day.is-selected { background: var(--green); }
-.day.is-selected .day__name,
-.day.is-selected .day__num { color: #fff; }
-.day.is-selected .day__dot { background: #fff; }
 
 /* ---------- 가운데 운동 목록 ---------- */
 .content {
@@ -431,3 +405,138 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
   color: var(--text-sub);
 }
 .history__rm strong { color: var(--green-dark); font-variant-numeric: tabular-nums; }
+
+/* ---------- 화면 전환 ---------- */
+.app[hidden] { display: none; }
+
+/* 기록 화면 머리: [달력으로] [‹ 날짜 ›] [빈칸] — 날짜를 가운데에 두기 위해 양옆 폭을 맞춤 */
+.date-bar__top--day { gap: 4px; }
+.back-btn {
+  flex: 0 0 64px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--green-dark);
+}
+.back-btn span { font-size: 24px; line-height: 1; }
+.back-btn:active { background: var(--green-soft); }
+.back-btn--spacer { visibility: hidden; }
+.day-nav { flex: 1; display: flex; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
+.day-nav .date-bar__title { font-size: 17px; white-space: nowrap; text-align: center; }
+
+/* ---------- 부위 라벨 색 ---------- */
+.part {
+  display: block;
+  max-width: 100%;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  text-align: center;
+  white-space: nowrap;
+}
+.part--0 { background: #fde4e4; color: #b42318; } /* 가슴 */
+.part--1 { background: #dde9fd; color: #1d4ed8; } /* 등 */
+.part--2 { background: #fdf0c8; color: #965a04; } /* 하체 */
+.part--3 { background: #ece8fe; color: #6d28d9; } /* 어깨 */
+.part--4 { background: #fce4f1; color: #be185d; } /* 팔 */
+.part--5 { background: #d3f6ef; color: #0f766e; } /* 복근 */
+.part--6 { background: #dcf7e5; color: #15803d; } /* 유산소 */
+.part--7 { background: #eceeed; color: #4b5563; } /* 기타 */
+.part--none { background: var(--green-soft); color: var(--green-dark); }
+.part--more { background: none; color: var(--text-sub); font-weight: 500; }
+
+/* ---------- 오늘 뭐 할까 ---------- */
+.content--calendar { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+
+.plan {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 16px 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.plan__title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+.plan__desc { font-size: 12px; color: var(--text-sub); margin: 2px 0 12px; }
+.plan__list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 0 16px 2px;
+  scrollbar-width: none;
+}
+.plan__list::-webkit-scrollbar { display: none; }
+.plan__item {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 68px;
+  padding: 10px 10px 8px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+}
+.plan__item.is-top { border-color: var(--green); background: var(--green-soft); }
+.plan__item .part { font-size: 13px; line-height: 20px; padding: 0 8px; border-radius: 6px; }
+.plan__days { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.plan__empty { font-size: 14px; color: var(--text-sub); }
+
+/* ---------- 월간 달력 ---------- */
+.calendar {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 10px 6px 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.calendar__weekdays,
+.calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.calendar__weekdays li {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-sub);
+  padding-bottom: 6px;
+}
+.calendar__weekdays li:first-child { color: #dc2626; }
+.calendar__weekdays li:last-child { color: #2563eb; }
+
+.cal-day {
+  width: 100%;
+  min-height: 78px;
+  padding: 4px 2px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border-radius: 10px;
+}
+.cal-day:active { background: var(--bg); }
+.cal-day:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.cal-day__num {
+  width: 26px; height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.cal-day.is-sun .cal-day__num { color: #dc2626; }
+.cal-day.is-sat .cal-day__num { color: #2563eb; }
+.cal-day.is-today .cal-day__num { background: var(--green); color: #fff; font-weight: 700; }
+.cal-day__labels { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; }
+
+.today-btn { margin-top: 16px; height: 52px; }
