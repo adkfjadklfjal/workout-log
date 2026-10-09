@@ -656,12 +656,17 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 .toast__action[hidden] { display: none; }
 
 /* ---------- 끌어서 복사 ---------- */
-/* 길게 누를 때 글자 선택·iOS 길게 누르기 메뉴가 뜨지 않게 */
-.cal-day {
+/* 길게 누를 때 글자 선택·iOS 길게 누르기 메뉴(복사/이미지 저장)가 뜨지 않게.
+   touch-action: manipulation → 두 번 탭 확대 없이 스크롤은 그대로 */
+.calendar__grid,
+.cal-day,
+.cal-day * {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
+.cal-day { touch-action: manipulation; position: relative; transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s; }
 .calendar { position: relative; }
 .calendar-hint {
   margin-top: 10px;
@@ -672,7 +677,20 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 
 body.is-dragging { cursor: grabbing; -webkit-user-select: none; user-select: none; }
 
-.cal-day.is-drag-source { opacity: 0.45; }
+/* 길게 누르는 동안: 살짝 눌림 → 0.4초 뒤 끌기 시작: 칸이 떠오름 */
+.cal-day.is-pressing { transform: scale(0.94); background: var(--green-soft); transition-duration: 0.4s; }
+.cal-day.is-drag-source {
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18), inset 0 0 0 2px var(--green);
+  transform: scale(1.08);
+}
+.cal-day.is-lifted { animation: lift-cell 0.25s ease-out; }
+@keyframes lift-cell {
+  0% { transform: scale(0.94); }
+  60% { transform: scale(1.14); }
+  100% { transform: scale(1.08); }
+}
 .cal-day.is-drop-target {
   background: var(--green-soft);
   box-shadow: inset 0 0 0 2px var(--green);

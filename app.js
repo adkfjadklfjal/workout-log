@@ -275,21 +275,62 @@ $("calendarGrid").addEventListener("pointerdown", (e) => {
     overKey: null,
     edge: null,
   };
+  btn.classList.add("is-pressing"); // 길게 누르는 중이라는 표시
   drag.timer = setTimeout(startDrag, LONG_PRESS_MS);
   window.addEventListener("pointermove", onDragMove);
   window.addEventListener("pointerup", onDragEnd);
   window.addEventListener("pointercancel", cancelDrag);
 });
 
+// ---------- 터치 스크롤 막기 ----------
+// 터치 이벤트는 손가락이 처음 닿은 요소로만 계속 전달됨. 달을 넘기면서 그 칸이 다시 그려져
+// 문서에서 빠지면 이벤트가 window까지 올라오지 않으므로, 닿은 요소 자체에도 핸들러를 붙임.
+// (예전에는 끌기 시작 때 달력을 다시 그려서 touchmove를 못 막았고 → 브라우저 스크롤 → pointercancel)
+function guardTouchMove(e) {
+  if (!drag || !e.cancelable) return;
+  if (drag.active) {
+    e.preventDefault(); // 끄는 중: 스크롤 대신 끌기
+    return;
+  }
+  // 길게 누르기 판정 전: 10px 이내 손 떨림은 브라우저가 스크롤로 가져가지 않게 막고,
+  // 그보다 크게 움직이면 그대로 두어 평소처럼 스크롤
+  const t = e.touches[0];
+  if (t && Math.hypot(t.clientX - drag.startX, t.clientY - drag.startY) <= MOVE_TOLERANCE) e.preventDefault();
+}
+
+let touchTarget = null;
+function releaseTouchTarget() {
+  if (!touchTarget) return;
+  touchTarget.removeEventListener("touchmove", guardTouchMove);
+  touchTarget.removeEventListener("touchend", releaseTouchTarget);
+  touchTarget.removeEventListener("touchcancel", releaseTouchTarget);
+  touchTarget = null;
+}
+$("calendarGrid").addEventListener(
+  "touchstart",
+  (e) => {
+    releaseTouchTarget();
+    touchTarget = e.target;
+    touchTarget.addEventListener("touchmove", guardTouchMove, { passive: false });
+    touchTarget.addEventListener("touchend", releaseTouchTarget);
+    touchTarget.addEventListener("touchcancel", releaseTouchTarget);
+  },
+  { passive: true }
+);
+
 function startDrag() {
   drag.active = true;
-  // 그리드는 달이 바뀔 때 다시 그려지므로, 바뀌지 않는 화면 요소에 포인터를 묶어 둠
+  // 달이 바뀌면 그리드가 다시 그려지므로, 바뀌지 않는 화면 요소에 포인터를 묶어 둠
   try {
     $("calendarView").setPointerCapture(drag.pointerId);
   } catch {}
-  vibrate(30);
+  vibrate(30); // 지원 기기만 (아이폰 Safari는 진동 API 없음 → 칸이 떠오르는 표시로 알림)
   window.getSelection()?.removeAllRanges();
   document.body.classList.add("is-dragging");
+  // 달력을 다시 그리지 않고 원래 칸에 표시만 추가 (다시 그리면 터치 대상이 사라짐)
+  const src = document.querySelector(`.cal-day[data-date="${drag.fromKey}"]`);
+  src?.classList.remove("is-pressing");
+  src?.classList.add("is-drag-source", "is-lifted");
 
   const list = records[drag.fromKey];
   const names = list
@@ -304,7 +345,6 @@ function startDrag() {
   ghost.classList.add("is-shown");
 
   moveGhost();
-  renderCalendar();
   updateDropTarget();
   drag.raf = requestAnimationFrame(autoScroll);
 }
@@ -360,6 +400,7 @@ function finishDrag() {
   $("edgePrev").classList.remove("is-active");
   $("edgeNext").classList.remove("is-active");
   $("trash").classList.remove("is-over");
+  document.querySelector(".cal-day.is-pressing")?.classList.remove("is-pressing");
   if (wasActive) renderCalendar();
 }
 
@@ -451,20 +492,17 @@ function autoScroll() {
   drag.raf = requestAnimationFrame(autoScroll);
 }
 
-// 끄는 동안(또는 길게 누르는 중) 스크롤·글자 선택·길게 누르기 메뉴 막기
-window.addEventListener(
-  "touchmove",
-  (e) => {
-    if (drag?.active) e.preventDefault();
-  },
-  { passive: false }
-);
+// 끄는 동안(또는 길게 누르는 중) 스크롤·글자 선택·길게 누르기 메뉴 막기.
+// window의 non-passive touchmove는 처음부터 걸어 둬야 브라우저(특히 iOS Safari)가
+// touchmove를 취소 가능한 이벤트로 보냄. 닿은 요소가 문서에 남아 있으면 여기서도 막힘.
+window.addEventListener("touchmove", guardTouchMove, { passive: false });
 document.addEventListener("selectstart", (e) => {
   if (drag) e.preventDefault();
 });
+// 길게 누르기 메뉴(안드로이드 Chrome의 contextmenu) 막기
 $("calendarGrid").addEventListener("contextmenu", (e) => e.preventDefault());
 document.addEventListener("contextmenu", (e) => {
-  if (drag?.active) e.preventDefault();
+  if (drag) e.preventDefault();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && drag) cancelDrag();
