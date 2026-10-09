@@ -3,9 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#16a34a">
   <title>운동 기록</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+
+  <!-- PWA: 홈 화면 설치 -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <!-- 아이폰: 홈 화면 아이콘·전체 화면 실행·상태 표시줄·앱 이름 -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="운동 기록">
+  <meta name="format-detection" content="telephone=no">
+
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -214,5 +225,13 @@
   </div>
 
   <script src="app.js"></script>
+  <script>
+    // 서비스 워커 등록 (https 또는 localhost에서만 동작, 파일로 직접 열면 건너뜀)
+    if ("serviceWorker" in navigator && window.isSecureContext && location.protocol.startsWith("http")) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js").catch((err) => console.warn("서비스 워커 등록 실패", err));
+      });
+    }
+  </script>
 </body>
 </html>
