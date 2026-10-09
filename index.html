@@ -88,6 +88,20 @@
     </footer>
   </div>
 
+  <!-- ========== 종목별 기록 화면 ========== -->
+  <div class="app" id="exerciseView" hidden>
+    <header class="date-bar">
+      <div class="date-bar__top date-bar__top--day">
+        <button class="back-btn" id="exBackBtn" type="button" aria-label="이전 화면으로">
+          <span aria-hidden="true">‹</span> 뒤로
+        </button>
+        <h1 class="date-bar__title ex-title" id="exTitle"></h1>
+        <span class="back-btn back-btn--spacer" aria-hidden="true"></span>
+      </div>
+    </header>
+    <main class="content content--ex" id="exContent"></main>
+  </div>
+
   <!-- 휴식 타이머: 화면 아래 고정 막대 -->
   <div class="rest-timer" id="restTimer" role="timer" aria-label="휴식 타이머" hidden>
     <div class="rest-timer__fill" id="restFill"></div>

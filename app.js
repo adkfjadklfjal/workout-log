@@ -576,7 +576,10 @@ function renderList() {
     </button>
     <div class="card" data-id="${escapeHtml(ex.id)}" tabindex="0" role="button" aria-label="${escapeHtml(ex.name)} 수정, 왼쪽으로 밀면 삭제">
       <div class="card__head">
-        <h2 class="card__title">${escapeHtml(ex.name)}</h2>
+        <div class="card__name-wrap">
+          <h2 class="card__title"><button type="button" class="card__name" aria-label="${escapeHtml(ex.name)} 기록 추이 보기">${escapeHtml(ex.name)}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/></svg></button></h2>
+          ${isPersonalRecord(ex, dateKey) ? `<span class="pr-badge">신기록</span>` : ""}
+        </div>
         <div class="card__meta">
           ${ex.part ? `<span class="card__tag">${escapeHtml(ex.part)}</span>` : ""}
           <span class="card__edit" aria-hidden="true">수정 ›</span>
@@ -641,6 +644,280 @@ function renderList() {
   $("dayLabel").textContent = key(selected) === key(today) ? "오늘의 운동" : formatDate(selected);
 }
 
+// ---------- 최고 기록 ----------
+// 그 종목의 날짜별 기록 (오래된 순): [{ date, entries: [ex, ...] }]
+function exerciseHistory(name) {
+  const target = normalize(name);
+  const days = [];
+  for (const date of Object.keys(records).sort()) {
+    const entries = records[date].filter((ex) => normalize(ex.name) === target);
+    if (entries.length) days.push({ date, entries });
+  }
+  return days;
+}
+
+// 그날 같은 종목 중 가장 높은 추정 1RM (유산소·무게 없는 기록은 null)
+function dayBest1RM(entries) {
+  const values = entries.filter((ex) => !isCardioPart(ex)).map((ex) => best1RM(ex.sets)).filter((v) => v !== null);
+  return values.length ? Math.max(...values) : null;
+}
+
+// 신기록: 이전 날짜들의 최고 추정 1RM보다 높을 때 (이전 1RM이 없으면 = 첫 기록이면 표시 안 함)
+function isPersonalRecord(ex, dateKey) {
+  if (isCardioPart(ex)) return false;
+  const rm = best1RM(ex.sets);
+  if (rm === null) return false;
+  let prevBest = null;
+  for (const { date, entries } of exerciseHistory(ex.name)) {
+    if (date >= dateKey) break;
+    const v = dayBest1RM(entries);
+    if (v !== null && (prevBest === null || v > prevBest)) prevBest = v;
+  }
+  return prevBest !== null && rm > prevBest + 1e-9;
+}
+
+// ---------- SVG 꺾은선 그래프 (외부 라이브러리 없음) ----------
+let chartSeq = 0;
+
+// 눈금 간격을 1·2·5 × 10ⁿ 으로 맞춤
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const n = raw / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+}
+
+const shortMD = (k) => {
+  const d = parseKey(k);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+
+// points: [{ date, value, pr? }], format: 값 → 글자
+function lineChart(points, { format, label, color = "green" }) {
+  const W = 320;
+  const H = 188;
+  const pad = { l: 44, r: 16, t: 22, b: 28 };
+  const iw = W - pad.l - pad.r;
+  const ih = H - pad.t - pad.b;
+  const id = `chart${++chartSeq}`;
+
+  const values = points.map((p) => p.value);
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  if (lo === hi) {
+    const d = Math.max(Math.abs(hi) * 0.1, 1);
+    lo -= d;
+    hi += d;
+  }
+  const step = niceStep((hi - lo) / 3);
+  lo = Math.max(0, Math.floor(lo / step) * step);
+  hi = Math.ceil(hi / step) * step;
+
+  // 가로축은 실제 날짜 간격대로
+  const t = points.map((p) => parseKey(p.date).getTime());
+  const t0 = t[0];
+  const span = t[t.length - 1] - t0;
+  const x = (i) => (span ? pad.l + ((t[i] - t0) / span) * iw : pad.l + iw / 2);
+  const y = (v) => pad.t + ih - ((v - lo) / (hi - lo)) * ih;
+
+  const grid = [];
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    grid.push(`<line class="chart__grid" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}"/>
+      <text class="chart__ylabel" x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${formatNum(Math.round(v * 10) / 10)}</text>`);
+  }
+
+  // 날짜 라벨: 처음·끝 + 사이에 겹치지 않게 최대 2개
+  const labelIdx = new Set([0, points.length - 1]);
+  if (points.length > 2) {
+    for (const f of [1 / 3, 2 / 3]) {
+      const target = t0 + span * f;
+      let best = 0;
+      t.forEach((ti, i) => {
+        if (Math.abs(ti - target) < Math.abs(t[best] - target)) best = i;
+      });
+      const clear = [...labelIdx].every((j) => Math.abs(x(j) - x(best)) > 44);
+      if (clear) labelIdx.add(best);
+    }
+  }
+  const xLabels = [...labelIdx]
+    .map((i) => {
+      const anchor = points.length === 1 ? "middle" : i === 0 ? "start" : i === points.length - 1 ? "end" : "middle";
+      return `<text class="chart__xlabel" x="${x(i)}" y="${H - 8}" text-anchor="${anchor}">${shortMD(points[i].date)}</text>`;
+    })
+    .join("");
+
+  const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area =
+    points.length > 1
+      ? `<path class="chart__area" fill="url(#${id}g)" d="${line} L${x(points.length - 1).toFixed(1)},${pad.t + ih} L${x(0).toFixed(1)},${pad.t + ih} Z"/>`
+      : "";
+
+  // 최고값과 마지막 값에는 숫자 표시
+  const maxIdx = values.indexOf(Math.max(...values));
+  const lastIdx = points.length - 1;
+  const valueLabel = (i) => {
+    const anchor = x(i) < pad.l + 30 ? "start" : x(i) > W - pad.r - 30 ? "end" : "middle";
+    return `<text class="chart__vlabel" x="${x(i)}" y="${y(points[i].value) - 10}" text-anchor="${anchor}">${format(points[i].value)}</text>`;
+  };
+
+  const dots = points
+    .map(
+      (p, i) =>
+        `<circle class="chart__dot${p.pr ? " chart__dot--pr" : ""}${i === lastIdx ? " chart__dot--last" : ""}" cx="${x(i)}" cy="${y(p.value)}" r="${
+          i === lastIdx || p.pr ? 4.5 : 3.5
+        }"><title>${shortMD(p.date)} ${format(p.value)}${p.pr ? " (신기록)" : ""}</title></circle>`
+    )
+    .join("");
+
+  const summary = `${label}: ${points.length}일, ${shortMD(points[0].date)} ${format(points[0].value)}에서 ${shortMD(points[lastIdx].date)} ${format(points[lastIdx].value)}, 최고 ${format(values[maxIdx])}`;
+  return `<svg class="chart chart--${color}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(summary)}">
+    <defs><linearGradient id="${id}g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" class="chart__stop-top"/><stop offset="100%" class="chart__stop-bottom"/>
+    </linearGradient></defs>
+    ${grid.join("")}
+    ${area}
+    ${points.length > 1 ? `<path class="chart__line" d="${line}"/>` : ""}
+    ${dots}
+    ${valueLabel(maxIdx)}
+    ${maxIdx !== lastIdx ? valueLabel(lastIdx) : ""}
+    ${xLabels}
+  </svg>`;
+}
+
+// 그래프 카드: 기록이 하루뿐이면 점 하나 + 안내, 없으면 안내만
+function chartCard(title, points, opts) {
+  let body;
+  if (!points.length) body = `<p class="chart-empty">${opts.emptyText}</p>`;
+  else
+    body =
+      lineChart(points, { ...opts, label: title }) +
+      (points.length === 1 ? `<p class="chart-note">기록이 하루뿐이에요. 다른 날에도 기록하면 변화가 선으로 이어져요.</p>` : "");
+  return `<section class="ex-card"><h2 class="ex-card__title">${title}</h2>${body}</section>`;
+}
+
+const statTile = (label, value, sub = "") =>
+  `<div class="ex-stat"><p class="ex-stat__label">${label}</p><p class="ex-stat__value">${value}</p>${
+    sub ? `<p class="ex-stat__sub">${sub}</p>` : ""
+  }</div>`;
+
+// ---------- 종목별 기록 화면 ----------
+function renderExercise(name) {
+  const days = exerciseHistory(name);
+  const latest = days.at(-1)?.entries.at(-1);
+  const part = latest?.part || "";
+  const cardio = days.some((d) => d.entries.some((ex) => isCardio(ex) || ex.part === CARDIO_PART));
+
+  $("exTitle").textContent = latest?.name || name;
+  const html = [];
+  html.push(
+    `<p class="ex-sub">${part ? `<span class="part ${partClass(part)}">${escapeHtml(part)}</span>` : ""}<span>${
+      days.length ? `${days.length}일 기록 · 처음 ${formatDate(parseKey(days[0].date))}` : "기록이 없어요"
+    }</span></p>`
+  );
+
+  if (!days.length) {
+    $("exContent").innerHTML = html.join("") + `<p class="chart-empty">아직 이 종목의 기록이 없어요.</p>`;
+    return;
+  }
+
+  if (cardio) {
+    const timePts = [];
+    const kmPts = [];
+    for (const { date, entries } of days) {
+      const c = entries.filter(isCardio);
+      if (!c.length) continue;
+      timePts.push({ date, value: c.reduce((s, ex) => s + ex.cardio.minutes, 0) });
+      const km = c.reduce((s, ex) => s + (ex.cardio.km || 0), 0);
+      if (km > 0) kmPts.push({ date, value: km, minutes: timePts.at(-1).value });
+    }
+    const longest = timePts.reduce((a, b) => (b.value > (a?.value ?? -1) ? b : a), null);
+    const farthest = kmPts.reduce((a, b) => (b.value > (a?.value ?? -1) ? b : a), null);
+    const fastest = kmPts.reduce((a, b) => (!a || b.minutes / b.value < a.minutes / a.value ? b : a), null);
+
+    html.push(
+      `<div class="ex-stats">
+        ${statTile("최장 시간", longest ? formatMinutes(longest.value) : "—", longest ? shortMD(longest.date) : "")}
+        ${statTile("최장 거리", farthest ? formatKm(farthest.value) : "—", farthest ? shortMD(farthest.date) : "")}
+        ${statTile("최고 페이스", fastest ? `${formatPace(fastest.minutes, fastest.value)}/km` : "—", fastest ? shortMD(fastest.date) : "")}
+        ${statTile("총 수행", `${days.length}일`)}
+      </div>`,
+      chartCard("날짜별 시간 (분)", timePts, {
+        format: (v) => formatMinutes(v),
+        emptyText: "시간으로 기록한 날이 없어요.",
+      }),
+      chartCard("날짜별 거리 (km)", kmPts, {
+        format: (v) => formatKm(v),
+        color: "blue",
+        emptyText: "거리를 입력한 기록이 없어요. 거리를 넣으면 변화가 그려져요.",
+      })
+    );
+  } else {
+    // 날짜별 최고 추정 1RM, 그때까지의 최고를 넘은 날은 신기록 점
+    const points = [];
+    let runningBest = null;
+    for (const { date, entries } of days) {
+      const v = dayBest1RM(entries);
+      if (v === null) continue;
+      const pr = runningBest !== null && v > runningBest + 1e-9;
+      if (runningBest === null || v > runningBest) runningBest = v;
+      points.push({ date, value: v, pr });
+    }
+    const bestRM = points.reduce((a, b) => (b.value > (a?.value ?? -1) ? b : a), null);
+    let heaviest = null;
+    for (const { date, entries } of days)
+      for (const ex of entries)
+        if (!isCardioPart(ex))
+          for (const s of ex.sets)
+            if (s.weight > 0 && (!heaviest || s.weight > heaviest.weight || (s.weight === heaviest.weight && s.reps > heaviest.reps)))
+              heaviest = { date, weight: s.weight, reps: s.reps };
+
+    html.push(
+      `<div class="ex-stats ex-stats--3">
+        ${statTile("최고 추정 1RM", bestRM ? format1RM(bestRM.value) : "—", bestRM ? shortMD(bestRM.date) : "")}
+        ${statTile("최고 무게", heaviest ? `${formatNum(heaviest.weight)}kg` : "—", heaviest ? `${formatNum(heaviest.reps)}회 · ${shortMD(heaviest.date)}` : "")}
+        ${statTile("총 수행", `${days.length}일`)}
+      </div>`,
+      chartCard("날짜별 추정 1RM (kg)", points, {
+        format: (v) => format1RM(v),
+        emptyText: "무게를 넣은 세트가 없어 추정 1RM을 계산할 수 없어요.",
+      })
+    );
+    if (points.some((p) => p.pr)) html.push(`<p class="chart-legend"><span class="chart-legend__pr"></span>신기록을 세운 날</p>`);
+  }
+
+  // 날짜별 기록 목록 (최근 순) — 누르면 그날 기록 화면
+  html.push(
+    `<section class="ex-card"><h2 class="ex-card__title">날짜별 기록</h2><ul class="ex-days">${days
+      .slice()
+      .reverse()
+      .map(({ date, entries }) => {
+        let detail;
+        if (cardio) {
+          const c = entries.filter(isCardio);
+          detail = c.length
+            ? cardioSummary({ minutes: c.reduce((s, e) => s + e.cardio.minutes, 0), km: c.reduce((s, e) => s + (e.cardio.km || 0), 0) || null })
+            : `${entries.reduce((s, e) => s + e.sets.length, 0)}세트 (예전 형식)`;
+        } else {
+          const sets = entries.flatMap((e) => e.sets);
+          const top = sets.reduce((a, s) => (estimate1RM(s) !== null && (!a || estimate1RM(s) > estimate1RM(a)) ? s : a), null);
+          const rm = dayBest1RM(entries);
+          detail = `${sets.length}세트${top ? ` · ${formatNum(top.weight)}kg×${formatNum(top.reps)}` : ""}${rm !== null ? ` · 1RM ${format1RM(rm)}` : ""}`;
+        }
+        return `<li><button type="button" class="ex-day" data-date="${date}"><span class="ex-day__date">${formatDate(parseKey(date))}</span><span class="ex-day__detail">${detail}</span><span class="ex-day__go" aria-hidden="true">›</span></button></li>`;
+      })
+      .join("")}</ul></section>`
+  );
+
+  $("exContent").innerHTML = html.join("");
+}
+
+// 날짜별 기록에서 날짜를 누르면 그날 기록 화면 (달력 버튼은 달력으로 바로 가게)
+$("exContent").addEventListener("click", (e) => {
+  const btn = e.target.closest(".ex-day");
+  if (!btn) return;
+  enteredFromCalendar = false;
+  location.hash = `#/day/${btn.dataset.date}`;
+});
+
 function render() {
   renderCalendar();
   renderDayHeader();
@@ -673,25 +950,57 @@ function goToCalendar() {
 }
 $("backBtn").addEventListener("click", goToCalendar);
 
+// 종목별 기록 화면: #/ex/종목이름
+let enteredExFromApp = false;
+let dayScroll = null; // 기록 화면 → 종목 화면 → 뒤로 왔을 때 스크롤 위치 복원용
+
+function openExercise(name) {
+  enteredExFromApp = true;
+  dayScroll = { key: key(selected), y: window.scrollY };
+  location.hash = `#/ex/${encodeURIComponent(name)}`;
+}
+
+$("exBackBtn").addEventListener("click", () => {
+  if (enteredExFromApp) history.back();
+  else location.replace("#/");
+});
+
+function showView(id) {
+  for (const v of ["calendarView", "dayView", "exerciseView"]) $(v).hidden = v !== id;
+}
+
 function route() {
   closeSheet();
-  const match = location.hash.match(/^#\/day\/(\d{4}-\d{2}-\d{2})$/);
+  const dayMatch = location.hash.match(/^#\/day\/(\d{4}-\d{2}-\d{2})$/);
+  const exMatch = location.hash.match(/^#\/ex\/(.+)$/);
+  let exName = null;
+  if (exMatch) {
+    try {
+      exName = decodeURIComponent(exMatch[1]);
+    } catch {}
+  }
 
-  if (match && isValidKey(match[1])) {
-    selected = parseKey(match[1]);
-    $("calendarView").hidden = true;
-    $("dayView").hidden = false;
+  let scrollY = 0;
+  if (dayMatch && isValidKey(dayMatch[1])) {
+    selected = parseKey(dayMatch[1]);
+    showView("dayView");
     renderDayHeader();
     renderList();
+    if (dayScroll?.key === dayMatch[1]) scrollY = dayScroll.y;
+    dayScroll = null;
+    enteredExFromApp = false;
+  } else if (exName) {
+    showView("exerciseView");
+    renderExercise(exName);
   } else {
     enteredFromCalendar = false;
+    enteredExFromApp = false;
     // 기록 화면에서 다른 달로 넘어갔다면 그 달을 보여줌
     calMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
-    $("dayView").hidden = true;
-    $("calendarView").hidden = false;
+    showView("calendarView");
     renderCalendar();
   }
-  window.scrollTo(0, 0);
+  window.scrollTo(0, scrollY);
 }
 
 window.addEventListener("hashchange", route);
@@ -1176,6 +1485,13 @@ $("workoutList").addEventListener("click", (e) => {
   // 삭제 버튼이 열려 있으면 누를 때 먼저 닫기만 함
   if (openSwipeId) {
     setSwipeOpen(null);
+    return;
+  }
+  // 종목 이름 → 종목별 기록 화면, 나머지 부분 → 수정 창
+  const nameBtn = e.target.closest(".card__name");
+  if (nameBtn) {
+    const ex = (records[key(selected)] || []).find((x) => x.id === card.dataset.id);
+    if (ex) openExercise(ex.name);
     return;
   }
   const check = e.target.closest(".set-check");

@@ -961,3 +961,122 @@ body.is-dragging .trash { transform: translateY(0); }
 body.rest-on .content { padding-bottom: calc(184px + env(safe-area-inset-bottom)); }
 body.rest-on .content--calendar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 body.rest-on .toast { bottom: calc(160px + env(safe-area-inset-bottom)); }
+
+/* ---------- 카드: 종목 이름(추이 보기) · 신기록 ---------- */
+.card__name-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.card__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin: -6px -6px -6px -6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(22, 163, 74, 0.35);
+  text-underline-offset: 4px;
+}
+.card__name svg { flex: none; color: var(--green); }
+.card__name:active { background: var(--green-soft); }
+.card__name:focus-visible { outline: 2px solid var(--green); outline-offset: 0; }
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff4d6;
+  color: #9a5b00;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.pr-badge::before { content: "★"; color: #f5a400; }
+
+/* ---------- 종목별 기록 화면 ---------- */
+.ex-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.content--ex { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+body.rest-on .content--ex { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
+.ex-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+.ex-sub .part { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 6px; }
+
+.ex-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ex-stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ex-stat {
+  padding: 12px 10px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  min-width: 0;
+}
+.ex-stat__label { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; white-space: nowrap; }
+.ex-stat__value { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ex-stat__sub { font-size: 12px; color: var(--text-sub); margin-top: 2px; white-space: nowrap; }
+
+.ex-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 12px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.ex-card__title { font-size: 15px; font-weight: 700; margin: 0 4px 8px; }
+
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart__grid { stroke: var(--line); stroke-width: 1; }
+.chart__ylabel, .chart__xlabel { font-size: 11px; fill: var(--text-sub); font-variant-numeric: tabular-nums; }
+.chart__vlabel { font-size: 11.5px; font-weight: 700; fill: var(--text); font-variant-numeric: tabular-nums; }
+.chart__line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart__dot { stroke: #fff; stroke-width: 2; }
+.chart--green .chart__line { stroke: var(--green); }
+.chart--green .chart__dot { fill: var(--green); }
+.chart--green .chart__stop-top { stop-color: var(--green); stop-opacity: 0.22; }
+.chart--green .chart__stop-bottom { stop-color: var(--green); stop-opacity: 0; }
+.chart--blue .chart__line { stroke: #2563eb; }
+.chart--blue .chart__dot { fill: #2563eb; }
+.chart--blue .chart__stop-top { stop-color: #2563eb; stop-opacity: 0.2; }
+.chart--blue .chart__stop-bottom { stop-color: #2563eb; stop-opacity: 0; }
+.chart .chart__dot--pr { fill: #f5a400; }
+.chart-note, .chart-empty { font-size: 13px; color: var(--text-sub); text-align: center; padding: 8px 4px 2px; line-height: 1.5; }
+.chart-empty { padding: 24px 8px; }
+.chart-legend { display: flex; align-items: center; gap: 6px; margin: -4px 4px 12px; font-size: 12px; color: var(--text-sub); }
+.chart-legend__pr { width: 10px; height: 10px; border-radius: 50%; background: #f5a400; }
+
+.ex-days li + li { border-top: 1px solid var(--line); }
+.ex-day {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  text-align: left;
+}
+.ex-day:active { background: var(--bg); }
+.ex-day__date { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.ex-day__detail { font-size: 13px; color: var(--text-sub); text-align: right; font-variant-numeric: tabular-nums; min-width: 0; }
+.ex-day__go { color: var(--text-sub); font-size: 18px; }
