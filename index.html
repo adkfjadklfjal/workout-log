@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>운동 기록</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 상단: 날짜 선택 -->
+    <header class="date-bar">
+      <div class="date-bar__top">
+        <button class="icon-btn" id="prevWeek" aria-label="이전 주">‹</button>
+        <h1 class="date-bar__title" id="monthLabel">2026년 10월</h1>
+        <button class="icon-btn" id="nextWeek" aria-label="다음 주">›</button>
+      </div>
+      <ol class="week" id="week" aria-label="날짜 선택"></ol>
+    </header>
+
+    <!-- 가운데: 오늘 운동 목록 -->
+    <main class="content">
+      <div class="summary">
+        <div>
+          <p class="summary__label" id="dayLabel">오늘의 운동</p>
+          <p class="summary__value"><strong id="exerciseCount">0</strong>종목 · <strong id="setCount">0</strong>세트</p>
+        </div>
+        <div class="summary__volume">
+          <p class="summary__label">총 볼륨</p>
+          <p class="summary__value"><strong id="totalVolume">0</strong>kg</p>
+        </div>
+      </div>
+
+      <ul class="workout-list" id="workoutList"></ul>
+
+      <p class="empty" id="emptyState" hidden>아직 기록한 운동이 없어요.<br>아래 버튼으로 운동을 추가해 보세요.</p>
+    </main>
+
+    <!-- 하단: 운동 추가 -->
+    <footer class="bottom-bar">
+      <button class="add-btn" id="addBtn" type="button">
+        <span class="add-btn__plus" aria-hidden="true">+</span>
+        운동 추가
+      </button>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
