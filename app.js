@@ -49,6 +49,52 @@ const escapeHtml = (s) =>
 // 무게는 소수점(2.5kg 등)까지 그대로 표시
 const formatNum = (n) => Number(n).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
 
+// 종목 비교용: 대소문자와 띄어쓰기 차이 무시 ("벤치 프레스" = "벤치프레스")
+const normalize = (s) => s.toLowerCase().replace(/\s+/g, "");
+const parseKey = (k) => {
+  const [y, m, d] = k.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// 두 날짜 키 사이의 일수 (서머타임 등으로 시간이 어긋나도 반올림으로 보정)
+const daysBetween = (fromKey, toKey) => Math.round((parseKey(toKey) - parseKey(fromKey)) / 86400000);
+const formatDaysAgo = (n) => (n === 0 ? "같은 날" : `${n}일 전`);
+
+// ---------- 1RM 추정 (Epley) ----------
+// 무게 × (1 + 횟수/30), 1회는 무게 그대로, 무게 0인 세트는 제외
+function estimate1RM(set) {
+  if (!(set.weight > 0) || !(set.reps >= 1)) return null;
+  return set.reps === 1 ? set.weight : set.weight * (1 + set.reps / 30);
+}
+
+function best1RM(sets) {
+  const values = sets.map(estimate1RM).filter((v) => v !== null);
+  return values.length ? Math.max(...values) : null;
+}
+
+const format1RM = (v) =>
+  `${v.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}kg`;
+
+// 같은 종목의 가장 최근 기록
+// - beforeKey 이전 날짜에서 찾음 (sameDay가 true면 같은 날짜도 포함)
+// - excludeId: 자기 자신(수정 중인 기록)은 제외
+function findLastRecord(name, beforeKey, { excludeId = null, sameDay = false } = {}) {
+  const target = normalize(name);
+  if (!target) return null;
+  const dates = Object.keys(records)
+    .filter((d) => (sameDay ? d <= beforeKey : d < beforeKey))
+    .sort()
+    .reverse();
+  for (const date of dates) {
+    const list = records[date];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const ex = list[i];
+      if (ex.id !== excludeId && normalize(ex.name) === target) return { date, ex };
+    }
+  }
+  return null;
+}
+
 // ---------- 화면 그리기 ----------
 function renderWeek() {
   const week = $("week");
@@ -77,10 +123,13 @@ function renderWeek() {
 }
 
 function renderList() {
-  const list = records[key(selected)] || [];
+  const dateKey = key(selected);
+  const list = records[dateKey] || [];
   $("workoutList").innerHTML = list
-    .map(
-      (ex) => `
+    .map((ex) => {
+      const rm = best1RM(ex.sets);
+      const prev = findLastRecord(ex.name, dateKey);
+      return `
     <li class="card" data-id="${escapeHtml(ex.id)}" tabindex="0" role="button" aria-label="${escapeHtml(ex.name)} 수정">
       <div class="card__head">
         <h2 class="card__title">${escapeHtml(ex.name)}</h2>
@@ -88,6 +137,14 @@ function renderList() {
           ${ex.part ? `<span class="card__tag">${escapeHtml(ex.part)}</span>` : ""}
           <span class="card__edit" aria-hidden="true">수정 ›</span>
         </div>
+      </div>
+      <div class="card__stats">
+        ${rm !== null ? `<span class="stat">추정 1RM <strong>${format1RM(rm)}</strong></span>` : ""}
+        ${
+          prev
+            ? `<span class="stat">직전 기록 <strong>${formatDaysAgo(daysBetween(prev.date, dateKey))}</strong></span>`
+            : `<span class="stat stat--first">첫 기록</span>`
+        }
       </div>
       <table class="sets">
         <thead><tr><th>세트</th><th>횟수</th><th>무게</th></tr></thead>
@@ -100,8 +157,8 @@ function renderList() {
             .join("")}
         </tbody>
       </table>
-    </li>`
-    )
+    </li>`;
+    })
     .join("");
 
   const allSets = list.flatMap((ex) => ex.sets);
@@ -166,12 +223,6 @@ function selectPart(part) {
 }
 
 // ---------- 종목 추천 / 지난 기록 ----------
-const normalize = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
-const parseKey = (k) => {
-  const [y, m, d] = k.split("-").map(Number);
-  return new Date(y, m - 1, d);
-};
-
 // 지금까지 쓴 종목 목록 (최근에 한 종목이 앞으로, 부위는 마지막 기록 기준)
 function knownExercises() {
   const map = new Map();
@@ -181,24 +232,6 @@ function knownExercises() {
     }
   }
   return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
-}
-
-// 같은 종목의 가장 최근 기록 (지금 수정 중인 기록과 이후 날짜는 제외)
-function findLastRecord(name) {
-  const target = normalize(name);
-  if (!target) return null;
-  const dates = Object.keys(records)
-    .filter((d) => d <= editingDate)
-    .sort()
-    .reverse();
-  for (const date of dates) {
-    const list = records[date];
-    for (let i = list.length - 1; i >= 0; i--) {
-      const ex = list[i];
-      if (ex.id !== editingId && normalize(ex.name) === target) return { date, ex };
-    }
-  }
-  return null;
 }
 
 function renderSuggestions() {
@@ -224,23 +257,26 @@ function renderSuggestions() {
 
 function renderHistory() {
   const box = $("historyBox");
-  const last = findLastRecord(nameInput.value);
+  // 같은 날 먼저 한 기록도 참고할 수 있게 포함, 수정 중인 기록 자신은 제외
+  const last = findLastRecord(nameInput.value, editingDate, { excludeId: editingId, sameDay: true });
   if (!last) {
     box.hidden = true;
     box.innerHTML = "";
     return;
   }
+  const rm = best1RM(last.ex.sets);
   box.hidden = false;
   box.innerHTML = `
     <div class="history__head">
-      <p class="history__title">지난 기록<span class="history__date">${formatDate(parseKey(last.date))}</span></p>
+      <p class="history__title">지난 기록<span class="history__date">${formatDate(parseKey(last.date))} · ${formatDaysAgo(daysBetween(last.date, editingDate))}</span></p>
       <button type="button" class="history__apply" id="applyHistory">세트 불러오기</button>
     </div>
     <ol class="history__sets">
       ${last.ex.sets
         .map((s, i) => `<li><span>${i + 1}세트</span>${formatNum(s.weight)}kg × ${formatNum(s.reps)}회</li>`)
         .join("")}
-    </ol>`;
+    </ol>
+    ${rm !== null ? `<p class="history__rm">추정 1RM <strong>${format1RM(rm)}</strong></p>` : ""}`;
   $("applyHistory").addEventListener("click", () => {
     setRows.innerHTML = "";
     last.ex.sets.forEach((s) => addSetRow(s.reps, s.weight));
