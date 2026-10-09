@@ -276,10 +276,11 @@ function onDragEnd(e) {
     finishDrag(); // 짧게 누름 → click 이벤트가 기록 화면으로 보냄
     return;
   }
-  const { fromKey, overKey } = drag;
+  const { fromKey, overKey, overTrash } = drag;
   suppressClickUntil = performance.now() + 400;
   finishDrag();
-  if (overKey && overKey !== fromKey) pasteRecords(fromKey, overKey);
+  if (overTrash) deleteDay(fromKey);
+  else if (overKey && overKey !== fromKey) pasteRecords(fromKey, overKey);
 }
 
 function cancelDrag() {
@@ -305,6 +306,7 @@ function finishDrag() {
   $("dragGhost").classList.remove("is-shown");
   $("edgePrev").classList.remove("is-active");
   $("edgeNext").classList.remove("is-active");
+  $("trash").classList.remove("is-over");
   if (wasActive) renderCalendar();
 }
 
@@ -320,10 +322,23 @@ function moveGhost() {
   ghost.style.transform = `translate(${left}px, ${top}px)`;
 }
 
-// 손가락 아래 날짜 칸 찾아 강조 (원래 날짜·가장자리·달력 밖은 놓을 곳 아님)
+// 휴지통은 pointer-events가 없어서 좌표로 판단
+function isOverTrash() {
+  const r = $("trash").getBoundingClientRect();
+  return drag.y >= r.top && drag.x >= r.left && drag.x <= r.right;
+}
+
+// 손가락 아래 날짜 칸(또는 휴지통) 찾아 강조 (원래 날짜·가장자리·달력 밖은 놓을 곳 아님)
 function updateDropTarget() {
+  const overTrash = isOverTrash();
+  if (overTrash !== !!drag.overTrash) {
+    drag.overTrash = overTrash;
+    $("trash").classList.toggle("is-over", overTrash);
+    if (overTrash) vibrate(20);
+  }
+
   let k = null;
-  if (!drag.edge) {
+  if (!drag.edge && !overTrash) {
     const cell = document.elementFromPoint(drag.x, drag.y)?.closest("#calendarGrid .cal-day");
     if (cell && cell.dataset.date !== drag.fromKey) k = cell.dataset.date;
   }
@@ -338,7 +353,7 @@ function updateDropTarget() {
 
 function updateEdge() {
   const rect = $("calendar").getBoundingClientRect();
-  const inRows = drag.y >= rect.top && drag.y <= rect.bottom;
+  const inRows = drag.y >= rect.top && drag.y <= rect.bottom && !isOverTrash();
   const edge = !inRows
     ? null
     : drag.x <= rect.left + EDGE_ZONE
@@ -368,17 +383,18 @@ function flipMonth() {
   drag.edgeTimer = setTimeout(flipMonth, EDGE_REPEAT);
 }
 
-// 화면 위/아래 끝으로 끌면 천천히 스크롤 (끄는 동안 손으로는 스크롤이 막혀 있으므로)
+// 화면 위 끝, 또는 휴지통 바로 위로 끌면 천천히 스크롤 (끄는 동안 손으로는 스크롤이 막혀 있으므로)
 function autoScroll() {
   if (!drag?.active) return;
+  const bottom = $("trash").getBoundingClientRect().top; // 휴지통 위에서는 스크롤하지 않음
   let dy = 0;
   if (drag.y < SCROLL_ZONE) dy = -Math.ceil((SCROLL_ZONE - drag.y) / 6);
-  else if (drag.y > innerHeight - SCROLL_ZONE) dy = Math.ceil((drag.y - (innerHeight - SCROLL_ZONE)) / 6);
-  if (dy) {
-    window.scrollBy(0, dy);
-    updateEdge();
-    updateDropTarget();
-  }
+  else if (drag.y > bottom - SCROLL_ZONE && drag.y < bottom)
+    dy = Math.ceil((drag.y - (bottom - SCROLL_ZONE)) / 6);
+  if (dy) window.scrollBy(0, dy);
+  // 손가락이 멈춰 있어도 화면(스크롤, 올라오는 휴지통)이 움직이면 놓을 곳이 바뀌므로 매 프레임 확인
+  updateEdge();
+  updateDropTarget();
   drag.raf = requestAnimationFrame(autoScroll);
 }
 
@@ -403,6 +419,32 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && drag) cancelDrag();
 });
+
+// 그날 기록 전체 삭제 (확인 창 없이, 5초 동안 되돌리기 가능)
+function deleteDay(dateKey) {
+  const removed = records[dateKey];
+  if (!removed?.length) return;
+  delete records[dateKey];
+  if (!saveRecords()) {
+    records[dateKey] = removed;
+    return;
+  }
+  render();
+  showToast(`${shortDate(dateKey)} 기록 ${removed.length}종목을 삭제했어요`, {
+    duration: 5000,
+    action: {
+      label: "되돌리기",
+      onClick: () => {
+        // 그사이 같은 날에 새 기록이 생겼으면 지운 기록을 앞에 되살림
+        records[dateKey] = [...removed, ...(records[dateKey] || [])];
+        saveRecords();
+        justPasted = dateKey;
+        render();
+        showToast("삭제를 취소했어요");
+      },
+    },
+  });
+}
 
 function pasteRecords(fromKey, toKey) {
   const source = records[fromKey] || [];
@@ -470,7 +512,12 @@ function renderList() {
       const rm = best1RM(ex.sets);
       const prev = findLastRecord(ex.name, dateKey);
       return `
-    <li class="card" data-id="${escapeHtml(ex.id)}" tabindex="0" role="button" aria-label="${escapeHtml(ex.name)} 수정">
+    <li class="swipe" data-id="${escapeHtml(ex.id)}">
+    <button class="swipe__delete" type="button" tabindex="-1" aria-label="${escapeHtml(ex.name)} 삭제">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>
+      삭제
+    </button>
+    <div class="card" data-id="${escapeHtml(ex.id)}" tabindex="0" role="button" aria-label="${escapeHtml(ex.name)} 수정, 왼쪽으로 밀면 삭제">
       <div class="card__head">
         <h2 class="card__title">${escapeHtml(ex.name)}</h2>
         <div class="card__meta">
@@ -497,9 +544,11 @@ function renderList() {
             .join("")}
         </tbody>
       </table>
+    </div>
     </li>`;
     })
     .join("");
+  openSwipeId = null;
 
   const allSets = list.flatMap((ex) => ex.sets);
   $("exerciseCount").textContent = list.length;
@@ -788,15 +837,140 @@ function openCard(card) {
   if (ex) openSheet(ex);
 }
 $("workoutList").addEventListener("click", (e) => {
+  const del = e.target.closest(".swipe__delete");
+  if (del) {
+    deleteExercise(key(selected), del.closest(".swipe").dataset.id);
+    return;
+  }
   const card = e.target.closest(".card");
-  if (card) openCard(card);
+  if (!card || performance.now() < suppressCardClickUntil) return;
+  // 삭제 버튼이 열려 있으면 누를 때 먼저 닫기만 함
+  if (openSwipeId) {
+    setSwipeOpen(null);
+    return;
+  }
+  openCard(card);
 });
 $("workoutList").addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")) {
+  if (!e.target.classList.contains("card")) return;
+  if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     openCard(e.target);
+  } else if (e.key === "Delete") {
+    deleteExercise(key(selected), e.target.dataset.id);
   }
 });
+
+// ---------- 운동 카드 밀어서 삭제 ----------
+// 왼쪽으로 밀면 뒤에 있던 삭제 버튼이 드러남. 세로로 움직이면 평소처럼 스크롤.
+const DELETE_W = 88;
+let swipe = null; // { pointerId, li, card, startX, startY, base, dx, mode: null | "h" }
+let openSwipeId = null;
+let suppressCardClickUntil = 0;
+
+function setSwipeOpen(id) {
+  openSwipeId = id;
+  document.querySelectorAll("#workoutList .swipe").forEach((li) => {
+    const open = li.dataset.id === id;
+    li.classList.toggle("is-open", open);
+    li.querySelector(".card").style.transform = open ? `translateX(-${DELETE_W}px)` : "";
+    li.querySelector(".swipe__delete").tabIndex = open ? 0 : -1;
+  });
+}
+
+$("workoutList").addEventListener("pointerdown", (e) => {
+  const card = e.target.closest(".card");
+  if (!card || swipe || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+  const li = card.closest(".swipe");
+  // 다른 카드가 열려 있으면 닫음
+  if (openSwipeId && openSwipeId !== li.dataset.id) setSwipeOpen(null);
+  swipe = {
+    pointerId: e.pointerId,
+    li,
+    card,
+    startX: e.clientX,
+    startY: e.clientY,
+    base: li.classList.contains("is-open") ? -DELETE_W : 0,
+    dx: 0,
+    mode: null,
+  };
+});
+
+$("workoutList").addEventListener("pointermove", (e) => {
+  if (!swipe || e.pointerId !== swipe.pointerId) return;
+  const dx = e.clientX - swipe.startX;
+  const dy = e.clientY - swipe.startY;
+  if (!swipe.mode) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+      swipe = null; // 세로 스크롤
+      return;
+    }
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+    swipe.mode = "h";
+    swipe.li.classList.add("is-swiping");
+    try {
+      swipe.card.setPointerCapture(e.pointerId);
+    } catch {}
+  }
+  swipe.dx = dx;
+  // 오른쪽으로는 안 열리고, 삭제 버튼 폭을 넘으면 저항감 있게 조금만 더 밀림
+  let x = swipe.base + dx;
+  if (x > 0) x = 0;
+  if (x < -DELETE_W) x = -DELETE_W - (-DELETE_W - x) / 3;
+  swipe.card.style.transform = `translateX(${x}px)`;
+});
+
+function endSwipe(e, cancelled) {
+  if (!swipe || e.pointerId !== swipe.pointerId) return;
+  const { mode, li, base, dx } = swipe;
+  swipe = null;
+  if (mode !== "h") return;
+  li.classList.remove("is-swiping");
+  suppressCardClickUntil = performance.now() + 300;
+  const open = cancelled ? base !== 0 : base + dx < -DELETE_W / 2;
+  setSwipeOpen(open ? li.dataset.id : null);
+}
+$("workoutList").addEventListener("pointerup", (e) => endSwipe(e, false));
+$("workoutList").addEventListener("pointercancel", (e) => endSwipe(e, true));
+
+// 카드 밖을 누르면 열린 삭제 버튼 닫기
+document.addEventListener("pointerdown", (e) => {
+  if (openSwipeId && !e.target.closest("#workoutList .swipe.is-open")) setSwipeOpen(null);
+});
+
+// 마지막 글자 받침에 따라 "을"/"를" (한글이 아니면 "을(를)")
+function objectParticle(word) {
+  const code = word.trim().slice(-1).charCodeAt(0) - 0xac00;
+  if (!(code >= 0 && code <= 11171)) return "을(를)";
+  return code % 28 ? "을" : "를";
+}
+
+// 운동 하나 삭제 (5초 동안 되돌리기 가능, 원래 자리로 복구)
+function deleteExercise(dateKey, id) {
+  const list = records[dateKey] || [];
+  const index = list.findIndex((ex) => ex.id === id);
+  if (index === -1) return;
+  const [removed] = list.splice(index, 1);
+  if (!list.length) delete records[dateKey];
+  if (!saveRecords()) {
+    (records[dateKey] ||= []).splice(index, 0, removed);
+    return;
+  }
+  render();
+  showToast(`${removed.name}${objectParticle(removed.name)} 삭제했어요`, {
+    duration: 5000,
+    action: {
+      label: "되돌리기",
+      onClick: () => {
+        const now = (records[dateKey] ||= []);
+        now.splice(Math.min(index, now.length), 0, removed);
+        saveRecords();
+        render();
+        showToast("삭제를 취소했어요");
+      },
+    },
+  });
+}
 
 // ---------- Enter 처리 (한글 IME 중복 방지) ----------
 // 한글 조합 중 Enter는 조합 확정용 keydown(isComposing / keyCode 229)이 한 번 더 들어오므로 무시.

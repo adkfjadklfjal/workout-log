@@ -652,3 +652,62 @@ body.is-dragging .edge { opacity: 1; visibility: visible; }
 }
 .edge.is-active::before { animation: edge-fill 0.6s linear forwards; }
 @keyframes edge-fill { to { transform: scaleY(1); } }
+
+/* ---------- 달력 휴지통 ---------- */
+.trash {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 45;
+  max-width: 480px;
+  height: calc(88px + env(safe-area-inset-bottom));
+  margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #b42318;
+  background: #fff1f1;
+  border-top: 2px dashed #f3a6a6;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: transform 0.2s ease, background 0.12s, color 0.12s;
+}
+body.is-dragging .trash { transform: translateY(0); }
+.trash.is-over {
+  background: #dc2626;
+  color: #fff;
+  border-top-color: #dc2626;
+}
+.trash.is-over svg { transform: scale(1.2) rotate(-8deg); transition: transform 0.12s; }
+
+/* ---------- 운동 카드 밀어서 삭제 ---------- */
+.swipe {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.swipe .card {
+  position: relative;
+  touch-action: pan-y; /* 세로 스크롤은 브라우저가, 가로 밀기는 앱이 처리 */
+  transition: transform 0.2s ease;
+}
+.swipe.is-swiping .card { transition: none; -webkit-user-select: none; user-select: none; }
+.swipe__delete {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+/* 닫혀 있을 때는 카드 둥근 모서리 사이로 빨간색이 비치지 않게 숨김 */
+.swipe:not(.is-open):not(.is-swiping) .swipe__delete { visibility: hidden; }
