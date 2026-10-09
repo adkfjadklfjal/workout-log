@@ -320,28 +320,114 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 
 .toast { z-index: 40; }
 
-/* ---------- 종목 추천 ---------- */
-.suggest {
+/* ---------- 부위별 종목 선택 ---------- */
+.picked {
   display: flex;
+  align-items: baseline;
   gap: 8px;
-  overflow-x: auto;
-  margin-top: 10px;
-  scrollbar-width: none;
+  margin-bottom: 8px;
 }
-.suggest::-webkit-scrollbar { display: none; }
-.suggest:empty { display: none; }
-.suggest__item {
-  flex: none;
+.picked .field__label { margin-bottom: 0; }
+.picked__name { font-size: 16px; font-weight: 700; color: var(--green-dark); }
+.picked__name.is-empty { font-weight: 500; color: var(--text-sub); }
+#exerciseField.is-invalid .picked__name { color: #dc2626; }
+
+.picker-hint {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  font-size: 14px;
+  color: var(--text-sub);
+  text-align: center;
+}
+.picker-hint[hidden], .picker[hidden], .ex-empty[hidden] { display: none; }
+
+.input--search {
+  height: 44px;
+  margin-bottom: 10px;
+  padding-left: 38px;
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%236b7570' stroke-width='2' stroke-linecap='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 12px center;
+}
+.input--search::-webkit-search-cancel-button { cursor: pointer; }
+
+.ex-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.ex-item {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.ex-item:active { background: var(--bg); }
+.ex-item__name { font-size: 14px; font-weight: 600; line-height: 1.3; word-break: keep-all; }
+.ex-item__name mark { background: none; color: var(--green-dark); font-weight: 800; }
+.ex-item__ago { font-size: 11px; color: var(--text-sub); }
+.ex-item.is-picked { border-color: var(--green); background: var(--green-soft); }
+.ex-item.is-picked .ex-item__name { color: var(--green-dark); }
+.ex-item.is-picked::after {
+  content: "✓";
+  position: absolute;
+  top: 6px; right: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+}
+/* 내가 추가한 종목 표시 */
+.dot,
+.ex-item.is-custom::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+.ex-item.is-custom::before { position: absolute; top: 8px; left: 6px; }
+
+.ex-empty { padding: 12px 4px; font-size: 14px; color: var(--text-sub); text-align: center; }
+.ex-empty__add {
+  margin-top: 8px;
   height: 40px;
   padding: 0 14px;
   border-radius: 999px;
-  border: 1.5px solid var(--line);
-  background: var(--surface);
+  background: var(--green-soft);
+  color: var(--green-dark);
   font-size: 14px;
-  white-space: nowrap;
+  font-weight: 600;
 }
-.suggest__item:active { background: var(--green-soft); border-color: var(--green); }
-.suggest__item mark { background: none; color: var(--green-dark); font-weight: 700; }
+
+.custom { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.custom__label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.custom__row { display: flex; gap: 8px; }
+.custom__row .input { flex: 1; min-width: 0; }
+.custom__add {
+  flex: none;
+  width: 64px;
+  height: var(--tap);
+  border-radius: 12px;
+  background: var(--green);
+  color: #fff;
+  font-weight: 700;
+}
+.custom__add:active { background: var(--green-dark); }
+.custom__hint { margin-top: 6px; font-size: 12px; color: var(--text-sub); }
+.custom__hint .dot { vertical-align: middle; margin: 0 1px; }
+
+#exerciseField .history { margin-top: 12px; }
 
 /* ---------- 지난 기록 ---------- */
 .history {
@@ -711,3 +797,15 @@ body.is-dragging .trash { transform: translateY(0); }
 }
 /* 닫혀 있을 때는 카드 둥근 모서리 사이로 빨간색이 비치지 않게 숨김 */
 .swipe:not(.is-open):not(.is-swiping) .swipe__delete { visibility: hidden; }
+.picked__change {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 600;
+}
+.picked__change:active { background: var(--line); }
+.picked__change[hidden] { display: none; }

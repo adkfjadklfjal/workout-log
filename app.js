@@ -644,15 +644,85 @@ $("toastAction").addEventListener("click", () => {
 
 // ---------- 추가/수정 시트 ----------
 const form = $("exerciseForm");
-const nameInput = $("nameInput");
 const setRows = $("setRows");
 const deleteBtn = $("deleteBtn");
+const searchInput = $("searchInput");
+const customInput = $("customInput");
 
 let editingId = null; // null이면 새로 추가
 let editingDate = null; // 시트를 연 시점의 날짜 키
 let selectedPart = "";
+let selectedName = "";
+let pickerOpen = true; // 종목을 고르면 목록을 접고 지난 기록을 바로 보여줌
 let deleteArmed = false;
 let saving = false;
+
+// ---------- 부위별 종목 목록 ----------
+const DEFAULT_EXERCISES = {
+  가슴: ["벤치프레스", "인클라인 벤치프레스", "덤벨프레스", "인클라인 덤벨프레스", "체스트프레스 머신", "펙덱 플라이", "케이블 크로스오버", "딥스", "푸시업"],
+  등: ["데드리프트", "풀업", "랫풀다운", "바벨로우", "덤벨로우", "시티드 케이블로우", "티바로우", "암풀다운"],
+  하체: ["스쿼트", "레그프레스", "런지", "레그익스텐션", "레그컬", "루마니안 데드리프트", "힙쓰러스트", "카프레이즈"],
+  어깨: ["오버헤드프레스", "덤벨 숄더프레스", "사이드 레터럴 레이즈", "프론트 레이즈", "리어 델트 플라이", "페이스풀", "슈러그"],
+  팔: ["바벨컬", "덤벨컬", "해머컬", "케이블 푸시다운", "라잉 트라이셉스 익스텐션", "오버헤드 익스텐션"],
+  복근: ["크런치", "레그레이즈", "플랭크", "행잉 레그레이즈", "케이블 크런치", "러시안 트위스트"],
+  유산소: ["러닝머신", "사이클", "로잉머신", "스텝밀", "줄넘기"],
+  기타: [],
+};
+
+// 내가 직접 추가한 종목: { 부위: [이름, ...] }
+const CUSTOM_KEY = "workout-custom-exercises-v1";
+const customExercises = (() => {
+  try {
+    const data = JSON.parse(localStorage.getItem(CUSTOM_KEY));
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+})();
+
+function saveCustomExercises() {
+  try {
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(customExercises));
+    return true;
+  } catch {
+    showToast("저장 공간에 기록하지 못했어요");
+    return false;
+  }
+}
+
+const isCustom = (part, name) => (customExercises[part] || []).some((n) => normalize(n) === normalize(name));
+
+// 종목별 마지막으로 한 날짜 (부위 상관없이 이름 기준, 기록하려는 날짜까지만)
+function lastDoneDates(untilKey) {
+  const map = new Map();
+  for (const date of Object.keys(records).sort()) {
+    if (date > untilKey) break;
+    for (const ex of records[date]) if (ex.id !== editingId) map.set(normalize(ex.name), date);
+  }
+  return map;
+}
+
+// 한 부위의 종목 목록: 기본 종목 + 내가 추가한 종목 + 기록에 그 부위로 저장된 종목.
+// 최근에 한 종목이 앞에(최근 순), 안 해 본 종목은 기본 → 내가 추가한 순서.
+function exercisesForPart(part) {
+  const done = lastDoneDates(editingDate);
+  const items = new Map();
+  const add = (name, origin) => {
+    const k = normalize(name);
+    if (!k || items.has(k)) return;
+    items.set(k, { name, origin, order: items.size, last: done.get(k) || null });
+  };
+  (DEFAULT_EXERCISES[part] || []).forEach((n) => add(n, "default"));
+  (customExercises[part] || []).forEach((n) => add(n, "custom"));
+  for (const date of Object.keys(records)) {
+    for (const ex of records[date]) if (ex.part === part) add(ex.name, "record");
+  }
+  return [...items.values()].sort((a, b) => {
+    if (a.last && b.last) return b.last.localeCompare(a.last);
+    if (a.last || b.last) return a.last ? -1 : 1;
+    return a.order - b.order;
+  });
+}
 
 $("partChips").innerHTML = PARTS.map(
   (p) => `<button type="button" class="chip" data-part="${p}" aria-pressed="false">${p}</button>`
@@ -661,53 +731,191 @@ $("partChips").innerHTML = PARTS.map(
 $("partChips").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
   if (!chip) return;
-  selectPart(selectedPart === chip.dataset.part ? "" : chip.dataset.part);
+  if (chip.dataset.part !== selectedPart) {
+    selectPart(chip.dataset.part);
+    searchInput.value = "";
+  }
+  pickerOpen = true;
+  renderPicker();
+});
+
+$("pickerToggle").addEventListener("click", () => {
+  pickerOpen = !pickerOpen;
+  renderPicker();
 });
 
 function selectPart(part) {
   selectedPart = part;
-  document.querySelectorAll(".chip").forEach((c) => {
+  document.querySelectorAll("#partChips .chip").forEach((c) => {
     c.setAttribute("aria-pressed", String(c.dataset.part === part));
   });
 }
 
-// ---------- 종목 추천 / 지난 기록 ----------
-// 지금까지 쓴 종목 목록 (최근에 한 종목이 앞으로, 부위는 마지막 기록 기준)
-function knownExercises() {
-  const map = new Map();
-  for (const date of Object.keys(records).sort()) {
-    for (const ex of records[date]) {
-      map.set(normalize(ex.name), { name: ex.name, part: ex.part, date });
-    }
-  }
-  return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+function highlight(name, raw) {
+  const i = raw ? name.toLowerCase().indexOf(raw.toLowerCase()) : -1;
+  if (i === -1) return escapeHtml(name);
+  return (
+    escapeHtml(name.slice(0, i)) +
+    `<mark>${escapeHtml(name.slice(i, i + raw.length))}</mark>` +
+    escapeHtml(name.slice(i + raw.length))
+  );
 }
 
-function renderSuggestions() {
-  const raw = nameInput.value.trim();
-  const q = normalize(raw);
-  const items = knownExercises()
-    .filter((x) => normalize(x.name) !== q && normalize(x.name).includes(q))
-    .slice(0, 8);
+function renderPicker() {
+  $("pickedName").textContent = selectedName || "선택 안 함";
+  $("pickedName").classList.toggle("is-empty", !selectedName);
+  const open = pickerOpen || !selectedName;
+  const toggle = $("pickerToggle");
+  toggle.hidden = !selectedName;
+  toggle.textContent = open ? "접기" : "변경";
+  $("pickerHint").hidden = !open || !!selectedPart;
+  $("picker").hidden = !open || !selectedPart;
+  if ($("picker").hidden) return;
 
-  $("suggestList").innerHTML = items
+  const raw = searchInput.value.trim();
+  const q = normalize(raw);
+  const items = exercisesForPart(selectedPart).filter((x) => normalize(x.name).includes(q));
+
+  $("exList").innerHTML = items
     .map((x) => {
-      const i = raw ? x.name.toLowerCase().indexOf(raw.toLowerCase()) : -1;
-      const label =
-        i === -1
-          ? escapeHtml(x.name)
-          : escapeHtml(x.name.slice(0, i)) +
-            `<mark>${escapeHtml(x.name.slice(i, i + raw.length))}</mark>` +
-            escapeHtml(x.name.slice(i + raw.length));
-      return `<button type="button" class="suggest__item" data-name="${escapeHtml(x.name)}" data-part="${escapeHtml(x.part || "")}">${label}</button>`;
+      const picked = normalize(x.name) === normalize(selectedName);
+      const ago = x.last ? daysBetween(x.last, editingDate) : null;
+      const agoText = ago === null ? "" : ago === 0 ? "오늘" : `${ago}일 전`;
+      return `<li><button type="button" class="ex-item${picked ? " is-picked" : ""}${
+        x.origin === "custom" ? " is-custom" : ""
+      }" data-name="${escapeHtml(x.name)}" data-origin="${x.origin}" aria-pressed="${picked}">
+        <span class="ex-item__name">${highlight(x.name, raw)}</span>
+        ${agoText ? `<span class="ex-item__ago">${agoText}</span>` : ""}
+      </button></li>`;
     })
     .join("");
+
+  const empty = $("exEmpty");
+  empty.hidden = items.length > 0;
+  empty.innerHTML = items.length
+    ? ""
+    : raw
+      ? `<p>'${escapeHtml(raw)}'에 맞는 종목이 없어요.</p><button type="button" class="ex-empty__add" id="searchToCustom">'${escapeHtml(raw)}' 새 종목으로 추가</button>`
+      : `<p>아직 종목이 없어요. 아래에서 직접 추가해 보세요.</p>`;
 }
 
+function pickExercise(name) {
+  selectedName = name;
+  pickerOpen = false;
+  clearError();
+  renderPicker();
+  renderHistory();
+}
+
+searchInput.addEventListener("input", renderPicker);
+
+$("exList").addEventListener("click", (e) => {
+  const item = e.target.closest(".ex-item");
+  if (!item || performance.now() < suppressExClickUntil) return;
+  pickExercise(item.dataset.name);
+});
+
+$("exEmpty").addEventListener("click", (e) => {
+  if (!e.target.closest("#searchToCustom")) return;
+  customInput.value = searchInput.value.trim();
+  addCustomExercise();
+});
+
+// 직접 입력 → 그 부위 목록에 추가하고 바로 선택
+function addCustomExercise() {
+  const name = customInput.value.trim().replace(/\s+/g, " ");
+  if (!selectedPart) return fail("부위를 먼저 골라 주세요.", null);
+  if (!name) return fail("추가할 종목 이름을 입력해 주세요.", customInput);
+
+  const existing = exercisesForPart(selectedPart).find((x) => normalize(x.name) === normalize(name));
+  if (existing) {
+    showToast("이미 목록에 있는 종목이에요");
+  } else {
+    (customExercises[selectedPart] ||= []).push(name);
+    if (!saveCustomExercises()) {
+      customExercises[selectedPart].pop();
+      return null;
+    }
+    showToast(`${selectedPart} 목록에 추가했어요`);
+  }
+  customInput.value = "";
+  searchInput.value = "";
+  pickExercise(existing ? existing.name : name);
+  return true;
+}
+$("customAddBtn").addEventListener("click", addCustomExercise);
+
+// 내가 추가한 종목은 길게 누르면 목록에서 삭제 (기록은 그대로, 되돌리기 가능)
+const EX_LONG_PRESS_MS = 500;
+let exPress = null;
+let suppressExClickUntil = 0;
+
+$("exList").addEventListener("pointerdown", (e) => {
+  const item = e.target.closest(".ex-item");
+  if (!item || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+  exPress = {
+    pointerId: e.pointerId,
+    x: e.clientX,
+    y: e.clientY,
+    timer: setTimeout(() => {
+      suppressExClickUntil = performance.now() + 600;
+      exPress = null;
+      removeCustomExercise(item.dataset.name, item.dataset.origin);
+    }, EX_LONG_PRESS_MS),
+  };
+});
+$("exList").addEventListener("pointermove", (e) => {
+  if (exPress && Math.hypot(e.clientX - exPress.x, e.clientY - exPress.y) > 10) {
+    clearTimeout(exPress.timer);
+    exPress = null;
+  }
+});
+["pointerup", "pointercancel", "pointerleave"].forEach((type) =>
+  $("exList").addEventListener(type, () => {
+    if (exPress) clearTimeout(exPress.timer);
+    exPress = null;
+  })
+);
+$("exList").addEventListener("contextmenu", (e) => e.preventDefault());
+
+function removeCustomExercise(name, origin) {
+  vibrate(20);
+  if (origin !== "custom") {
+    showToast(origin === "default" ? "기본 종목은 지울 수 없어요" : "기록에서 온 종목은 지울 수 없어요");
+    return;
+  }
+  const part = selectedPart;
+  const list = customExercises[part] || [];
+  const index = list.findIndex((n) => normalize(n) === normalize(name));
+  if (index === -1) return;
+  list.splice(index, 1);
+  if (!saveCustomExercises()) {
+    list.splice(index, 0, name);
+    return;
+  }
+  renderPicker();
+  // 그 부위로 저장된 기록이 있으면 기록에서 온 종목으로 계속 보임
+  const stillShown = exercisesForPart(part).some((x) => normalize(x.name) === normalize(name));
+  showToast(stillShown ? "내 종목에서 지웠어요 (기록에 있어 목록엔 남아요)" : `${name}${objectParticle(name)} 목록에서 지웠어요`, {
+    duration: 5000,
+    action: {
+      label: "되돌리기",
+      onClick: () => {
+        const now = (customExercises[part] ||= []);
+        now.splice(Math.min(index, now.length), 0, name);
+        saveCustomExercises();
+        renderPicker();
+        showToast("되돌렸어요");
+      },
+    },
+  });
+}
+
+// ---------- 지난 기록 ----------
 function renderHistory() {
   const box = $("historyBox");
   // 같은 날 먼저 한 기록도 참고할 수 있게 포함, 수정 중인 기록 자신은 제외
-  const last = findLastRecord(nameInput.value, editingDate, { excludeId: editingId, sameDay: true });
+  const last = findLastRecord(selectedName, editingDate, { excludeId: editingId, sameDay: true });
   if (!last) {
     box.hidden = true;
     box.innerHTML = "";
@@ -735,25 +943,6 @@ function renderHistory() {
   });
 }
 
-function updateNameHelpers() {
-  renderSuggestions();
-  renderHistory();
-}
-
-// input 이벤트는 한글 조합 중에도 발생하므로 글자를 치는 동안 바로 걸러짐
-nameInput.addEventListener("input", () => {
-  nameInput.classList.remove("is-invalid");
-  updateNameHelpers();
-});
-
-$("suggestList").addEventListener("click", (e) => {
-  const item = e.target.closest(".suggest__item");
-  if (!item) return;
-  nameInput.value = item.dataset.name;
-  if (!selectedPart && item.dataset.part) selectPart(item.dataset.part);
-  updateNameHelpers();
-  setRows.querySelector('[data-field="reps"]')?.focus();
-});
 
 function addSetRow(reps = "", weight = "") {
   const li = document.createElement("li");
@@ -777,7 +966,7 @@ function renumberSets() {
     row.querySelector(".remove-set").disabled = rows.length === 1;
   });
   // 마지막 입력칸에서는 키보드 Enter가 "완료"로 보이게
-  form.querySelectorAll("input").forEach((input, i, all) => {
+  setRows.querySelectorAll("input").forEach((input, i, all) => {
     input.setAttribute("enterkeyhint", i === all.length - 1 ? "done" : "next");
   });
 }
@@ -806,18 +995,21 @@ function openSheet(exercise) {
 
   $("sheetTitle").textContent = exercise ? "운동 수정" : "운동 추가";
   $("sheetDate").textContent = formatDate(selected);
-  nameInput.value = exercise?.name ?? "";
+  // 저장된 기록의 종목·부위는 그대로 (부위 없이 저장된 옛 기록도 이름은 유지)
+  selectedName = exercise?.name ?? "";
+  pickerOpen = !exercise;
   selectPart(exercise?.part ?? "");
   if (exercise) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight));
   else addSetRow();
-  updateNameHelpers();
+  renderPicker();
+  renderHistory();
 
   deleteBtn.hidden = !exercise;
   disarmDelete();
 
   document.body.classList.add("sheet-open");
-  // 새로 추가할 때만 바로 키보드를 띄움
-  if (!exercise) setTimeout(() => nameInput.focus(), 250);
+  $("exList").scrollTop = 0;
+  form.querySelector(".sheet__body").scrollTop = 0;
 }
 
 function closeSheet() {
@@ -987,7 +1179,22 @@ form.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (e.isComposing || e.keyCode === 229 || composing || e.repeat) return;
 
-  const inputs = [...form.querySelectorAll("input")];
+  // 검색칸: 걸러진 첫 종목 선택 / 직접 입력칸: 목록에 추가
+  if (e.target === searchInput) {
+    const first = $("exList").querySelector(".ex-item");
+    if (first) {
+      pickExercise(first.dataset.name);
+      searchInput.blur();
+    }
+    return;
+  }
+  if (e.target === customInput) {
+    if (addCustomExercise()) customInput.blur();
+    return;
+  }
+
+  // 세트 칸: 다음 칸으로, 마지막 칸이면 저장
+  const inputs = [...setRows.querySelectorAll("input")];
   const next = inputs[inputs.indexOf(e.target) + 1];
   if (next) next.focus();
   else form.requestSubmit();
@@ -1003,15 +1210,18 @@ function fail(message, el) {
   $("formError").textContent = message;
   if (el) {
     el.classList.add("is-invalid");
-    el.focus();
+    if (el.matches("input")) el.focus();
+    else el.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   return null;
 }
 
 function readForm() {
   clearError();
-  const name = nameInput.value.trim();
-  if (!name) return fail("종목 이름을 입력해 주세요.", nameInput);
+  // 직접 입력칸에 쓰고 '추가'를 안 눌렀어도 저장할 때 목록에 추가하고 선택
+  if (!selectedName && customInput.value.trim() && !addCustomExercise()) return null;
+  const name = selectedName.trim();
+  if (!name) return fail(selectedPart ? "종목을 골라 주세요." : "부위와 종목을 골라 주세요.", $("exerciseField"));
 
   const sets = [];
   for (const row of setRows.children) {

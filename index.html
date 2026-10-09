@@ -96,15 +96,34 @@
 
       <div class="sheet__body">
         <div class="field">
-          <label class="field__label" for="nameInput">종목</label>
-          <input class="input" id="nameInput" type="text" placeholder="예: 벤치프레스" autocomplete="off" enterkeyhint="next">
-          <div class="suggest" id="suggestList" aria-label="최근 종목"></div>
-          <div class="history" id="historyBox" hidden></div>
+          <span class="field__label">부위</span>
+          <div class="chips" id="partChips"></div>
         </div>
 
-        <div class="field">
-          <span class="field__label">부위 <span class="field__hint">(선택)</span></span>
-          <div class="chips" id="partChips"></div>
+        <div class="field" id="exerciseField">
+          <div class="picked">
+            <span class="field__label">종목</span>
+            <strong class="picked__name" id="pickedName"></strong>
+            <button class="picked__change" id="pickerToggle" type="button" hidden>변경</button>
+          </div>
+          <p class="picker-hint" id="pickerHint">부위를 먼저 고르세요</p>
+
+          <div class="picker" id="picker" hidden>
+            <input class="input input--search" id="searchInput" type="search" placeholder="종목 검색" autocomplete="off" enterkeyhint="search" aria-label="종목 검색">
+            <ul class="ex-list" id="exList" aria-label="종목 목록"></ul>
+            <div class="ex-empty" id="exEmpty" hidden></div>
+
+            <div class="custom">
+              <label class="custom__label" for="customInput">직접 입력</label>
+              <div class="custom__row">
+                <input class="input" id="customInput" type="text" placeholder="예: 해머 스트렝스 로우" autocomplete="off" enterkeyhint="done">
+                <button class="custom__add" id="customAddBtn" type="button">추가</button>
+              </div>
+              <p class="custom__hint">내가 추가한 종목(<span class="dot" aria-hidden="true"></span>)은 길게 누르면 목록에서 지울 수 있어요</p>
+            </div>
+          </div>
+
+          <div class="history" id="historyBox" hidden></div>
         </div>
 
         <div class="field">
