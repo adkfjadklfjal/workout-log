@@ -61,6 +61,7 @@
         <div>
           <p class="summary__label" id="dayLabel">오늘의 운동</p>
           <p class="summary__value"><strong id="exerciseCount">0</strong>종목 · <strong id="setCount">0</strong>세트</p>
+          <p class="summary__cardio" id="cardioTotal" hidden>유산소 <strong id="cardioTotalValue"></strong></p>
         </div>
         <div class="summary__volume">
           <p class="summary__label">총 볼륨</p>
@@ -126,7 +127,23 @@
           <div class="history" id="historyBox" hidden></div>
         </div>
 
-        <div class="field">
+        <!-- 유산소: 시간·거리 입력 -->
+        <div class="field" id="cardioField" hidden>
+          <div class="cardio-inputs">
+            <label class="cardio-inputs__item">
+              <span class="field__label">시간 (분)</span>
+              <input class="input" id="minutesInput" type="number" inputmode="decimal" min="0" step="1" placeholder="0" enterkeyhint="next">
+            </label>
+            <label class="cardio-inputs__item">
+              <span class="field__label">거리 (km) <span class="field__hint">선택</span></span>
+              <input class="input" id="kmInput" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" enterkeyhint="done">
+            </label>
+          </div>
+          <p class="cardio-pace" id="cardioPace"></p>
+          <p class="cardio-note" id="cardioNote" hidden></p>
+        </div>
+
+        <div class="field" id="setsField">
           <div class="set-head">
             <span class="field__label">세트</span>
             <span class="set-head__col">횟수</span>

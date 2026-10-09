@@ -809,3 +809,38 @@ body.is-dragging .trash { transform: translateY(0); }
 }
 .picked__change:active { background: var(--line); }
 .picked__change[hidden] { display: none; }
+
+/* ---------- 유산소 ---------- */
+.summary__cardio { margin-top: 4px; font-size: 13px; color: var(--text-sub); }
+.summary__cardio strong { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.summary__cardio[hidden] { display: none; }
+
+/* 카드: 시간 · 거리 · 페이스 */
+.cardio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  margin: 0 -2px;
+  padding: 10px 0 8px;
+}
+.cardio div { text-align: center; }
+.cardio dt { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
+.cardio dd { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cardio dd .unit { font-weight: 400; }
+
+/* 입력 창 */
+#cardioField[hidden], #setsField[hidden] { display: none; }
+.cardio-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cardio-inputs__item .input { text-align: center; font-size: 18px; font-weight: 600; }
+.cardio-pace { min-height: 20px; margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--green-dark); }
+.cardio-note {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7e6;
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cardio-note[hidden] { display: none; }
+.history__cardio { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }

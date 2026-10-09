@@ -1,11 +1,27 @@
 // ---------- 저장소 ----------
-// 구조: { "YYYY-MM-DD": [{ id, name, part, sets: [{ reps, weight }] }] }
+// 구조: { "YYYY-MM-DD": [{ id, name, part, sets: [{ reps, weight }], cardio? }] }
+// 유산소(새 형식)는 sets를 빈 배열로 두고 cardio: { minutes, km | null } 에 시간·거리를 저장.
+// 예전에 세트로 저장한 유산소 기록은 cardio 없이 sets 그대로 읽음.
 const STORAGE_KEY = "workout-records-v1";
 
 function loadRecords() {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return data && typeof data === "object" ? data : {};
+    if (!data || typeof data !== "object") return {};
+    // 형식이 조금 어긋난 기록이 있어도 화면이 깨지지 않게 최소한으로 다듬음
+    for (const [date, list] of Object.entries(data)) {
+      if (!Array.isArray(list)) {
+        delete data[date];
+        continue;
+      }
+      data[date] = list.filter((ex) => ex && typeof ex === "object");
+      for (const ex of data[date]) {
+        if (!Array.isArray(ex.sets)) ex.sets = [];
+        if (ex.cardio && !(ex.cardio.minutes > 0)) delete ex.cardio;
+      }
+      if (!data[date].length) delete data[date];
+    }
+    return data;
   } catch {
     return {};
   }
@@ -74,6 +90,38 @@ function best1RM(sets) {
 
 const format1RM = (v) =>
   `${v.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}kg`;
+
+// ---------- 유산소 ----------
+const CARDIO_PART = "유산소";
+const isCardio = (ex) => !!ex.cardio; // 시간·거리로 저장된 유산소 기록
+const isCardioPart = (ex) => ex.part === CARDIO_PART || isCardio(ex); // 볼륨·1RM에서 뺄 기록
+
+// 75 → "1시간 15분", 30.5 → "30.5분"
+function formatMinutes(min) {
+  const total = Math.round(min * 10) / 10;
+  if (total < 60) return `${formatNum(total)}분`;
+  const h = Math.floor(total / 60);
+  const m = Math.round((total - h * 60) * 10) / 10;
+  return m ? `${h}시간 ${formatNum(m)}분` : `${h}시간`;
+}
+
+const formatKm = (km) => `${km.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}km`;
+
+// 평균 페이스 (분/km) → 6'05"
+function formatPace(minutes, km) {
+  if (!(km > 0) || !(minutes > 0)) return null;
+  let secs = Math.round((minutes / km) * 60);
+  const m = Math.floor(secs / 60);
+  secs -= m * 60;
+  return `${m}'${String(secs).padStart(2, "0")}"`;
+}
+
+// 한 줄 요약: "30분 · 5.00km · 6'00"/km"
+function cardioSummary(c) {
+  const parts = [formatMinutes(c.minutes)];
+  if (c.km > 0) parts.push(formatKm(c.km), `${formatPace(c.minutes, c.km)}/km`);
+  return parts.join(" · ");
+}
 
 // 같은 종목의 가장 최근 기록
 // - beforeKey 이전 날짜에서 찾음 (sameDay가 true면 같은 날짜도 포함)
@@ -244,7 +292,12 @@ function startDrag() {
   document.body.classList.add("is-dragging");
 
   const list = records[drag.fromKey];
-  const names = list.slice(0, 3).map((ex) => `<li>${escapeHtml(ex.name)}<span>${ex.sets.length}세트</span></li>`);
+  const names = list
+    .slice(0, 3)
+    .map(
+      (ex) =>
+        `<li>${escapeHtml(ex.name)}<span>${isCardio(ex) ? formatMinutes(ex.cardio.minutes) : `${ex.sets.length}세트`}</span></li>`
+    );
   if (list.length > 3) names.push(`<li class="drag-ghost__more">외 ${list.length - 3}종목</li>`);
   const ghost = $("dragGhost");
   ghost.innerHTML = `<p class="drag-ghost__date">${shortDate(drag.fromKey)} 기록</p><ul>${names.join("")}</ul>`;
@@ -455,6 +508,7 @@ function pasteRecords(fromKey, toKey) {
     name: ex.name,
     part: ex.part,
     sets: ex.sets.map((s) => ({ reps: s.reps, weight: s.weight })),
+    ...(isCardio(ex) && { cardio: { minutes: ex.cardio.minutes, km: ex.cardio.km ?? null } }),
   }));
   (records[toKey] ||= []).push(...copies); // 기존 기록 뒤에 추가
   if (!saveRecords()) {
@@ -509,8 +563,9 @@ function renderList() {
   const list = records[dateKey] || [];
   $("workoutList").innerHTML = list
     .map((ex) => {
-      const rm = best1RM(ex.sets);
+      const rm = isCardioPart(ex) ? null : best1RM(ex.sets); // 유산소는 1RM 없음
       const prev = findLastRecord(ex.name, dateKey);
+      const pace = isCardio(ex) ? formatPace(ex.cardio.minutes, ex.cardio.km) : null;
       return `
     <li class="swipe" data-id="${escapeHtml(ex.id)}">
     <button class="swipe__delete" type="button" tabindex="-1" aria-label="${escapeHtml(ex.name)} 삭제">
@@ -533,7 +588,14 @@ function renderList() {
             : `<span class="stat stat--first">첫 기록</span>`
         }
       </div>
-      <table class="sets">
+      ${
+        isCardio(ex)
+          ? `<dl class="cardio">
+        <div><dt>시간</dt><dd>${formatMinutes(ex.cardio.minutes)}</dd></div>
+        <div><dt>거리</dt><dd>${ex.cardio.km > 0 ? formatKm(ex.cardio.km) : "—"}</dd></div>
+        <div><dt>페이스</dt><dd>${pace ? `${pace}<span class="unit">/km</span>` : "—"}</dd></div>
+      </dl>`
+          : `<table class="sets">
         <thead><tr><th>세트</th><th>횟수</th><th>무게</th></tr></thead>
         <tbody>
           ${ex.sets
@@ -543,17 +605,27 @@ function renderList() {
             )
             .join("")}
         </tbody>
-      </table>
+      </table>`
+      }
     </div>
     </li>`;
     })
     .join("");
   openSwipeId = null;
 
-  const allSets = list.flatMap((ex) => ex.sets);
+  // 세트 수·총 볼륨은 근력 운동만, 유산소는 총 시간(거리)을 따로
+  const allSets = list.filter((ex) => !isCardioPart(ex)).flatMap((ex) => ex.sets);
   $("exerciseCount").textContent = list.length;
   $("setCount").textContent = allSets.length;
   $("totalVolume").textContent = formatNum(allSets.reduce((sum, s) => sum + s.reps * s.weight, 0));
+
+  const cardio = list.filter(isCardio);
+  const cardioMin = cardio.reduce((sum, ex) => sum + ex.cardio.minutes, 0);
+  const cardioKm = cardio.reduce((sum, ex) => sum + (ex.cardio.km || 0), 0);
+  $("cardioTotal").hidden = !cardio.length;
+  $("cardioTotalValue").textContent = cardio.length
+    ? formatMinutes(cardioMin) + (cardioKm > 0 ? ` · ${formatKm(cardioKm)}` : "")
+    : "";
   $("emptyState").hidden = list.length > 0;
   $("dayLabel").textContent = key(selected) === key(today) ? "오늘의 운동" : formatDate(selected);
 }
@@ -648,6 +720,8 @@ const setRows = $("setRows");
 const deleteBtn = $("deleteBtn");
 const searchInput = $("searchInput");
 const customInput = $("customInput");
+const minutesInput = $("minutesInput");
+const kmInput = $("kmInput");
 
 let editingId = null; // null이면 새로 추가
 let editingDate = null; // 시트를 연 시점의 날짜 키
@@ -737,7 +811,33 @@ $("partChips").addEventListener("click", (e) => {
   }
   pickerOpen = true;
   renderPicker();
+  renderInputMode();
+  renderHistory();
 });
+
+// ---------- 유산소 입력 (시간·거리) ----------
+const cardioMode = () => selectedPart === CARDIO_PART;
+let editingExercise = null; // 수정 중인 원래 기록 (예전 형식 안내용)
+
+function renderInputMode() {
+  const cardio = cardioMode();
+  $("cardioField").hidden = !cardio;
+  $("setsField").hidden = cardio;
+  // 예전에 세트로 저장한 유산소 기록을 열었을 때 안내
+  const legacy = cardio && editingExercise && !isCardio(editingExercise) && editingExercise.sets.length > 0;
+  $("cardioNote").hidden = !legacy;
+  $("cardioNote").textContent = legacy
+    ? `세트로 저장된 예전 기록이에요 (${editingExercise.sets.length}세트). 시간을 입력해 저장하면 시간·거리 기록으로 바뀌어요.`
+    : "";
+  renderPacePreview();
+}
+
+function renderPacePreview() {
+  const pace = formatPace(Number(minutesInput.value), Number(kmInput.value));
+  $("cardioPace").textContent = pace ? `평균 페이스 ${pace}/km` : "";
+}
+minutesInput.addEventListener("input", renderPacePreview);
+kmInput.addEventListener("input", renderPacePreview);
 
 $("pickerToggle").addEventListener("click", () => {
   pickerOpen = !pickerOpen;
@@ -921,25 +1021,45 @@ function renderHistory() {
     box.innerHTML = "";
     return;
   }
-  const rm = best1RM(last.ex.sets);
+  const lastCardio = isCardio(last.ex);
+  const rm = isCardioPart(last.ex) ? null : best1RM(last.ex.sets);
+  // 부위를 아직 안 골랐으면 지난 기록의 부위 기준으로, 입력 방식이 같을 때만 불러오기 가능
+  const willBeCardio = selectedPart ? cardioMode() : last.ex.part === CARDIO_PART;
+  const canApply = lastCardio === willBeCardio && (lastCardio || last.ex.sets.length > 0);
+
   box.hidden = false;
   box.innerHTML = `
     <div class="history__head">
       <p class="history__title">지난 기록<span class="history__date">${formatDate(parseKey(last.date))} · ${formatDaysAgo(daysBetween(last.date, editingDate))}</span></p>
-      <button type="button" class="history__apply" id="applyHistory">세트 불러오기</button>
+      ${canApply ? `<button type="button" class="history__apply" id="applyHistory">${lastCardio ? "불러오기" : "세트 불러오기"}</button>` : ""}
     </div>
-    <ol class="history__sets">
+    ${
+      lastCardio
+        ? `<p class="history__cardio">${cardioSummary(last.ex.cardio)}</p>`
+        : `<ol class="history__sets">
       ${last.ex.sets
         .map((s, i) => `<li><span>${i + 1}세트</span>${formatNum(s.weight)}kg × ${formatNum(s.reps)}회</li>`)
         .join("")}
-    </ol>
+    </ol>`
+    }
     ${rm !== null ? `<p class="history__rm">추정 1RM <strong>${format1RM(rm)}</strong></p>` : ""}`;
-  $("applyHistory").addEventListener("click", () => {
-    setRows.innerHTML = "";
-    last.ex.sets.forEach((s) => addSetRow(s.reps, s.weight));
-    if (!selectedPart && last.ex.part) selectPart(last.ex.part);
+
+  $("applyHistory")?.addEventListener("click", () => {
+    if (!selectedPart && last.ex.part) {
+      selectPart(last.ex.part);
+      renderPicker();
+      renderInputMode();
+    }
+    if (lastCardio) {
+      minutesInput.value = last.ex.cardio.minutes;
+      kmInput.value = last.ex.cardio.km > 0 ? last.ex.cardio.km : "";
+      renderPacePreview();
+    } else {
+      setRows.innerHTML = "";
+      last.ex.sets.forEach((s) => addSetRow(s.reps, s.weight));
+    }
     clearError();
-    showToast("지난 세트를 불러왔어요");
+    showToast(lastCardio ? "지난 기록을 불러왔어요" : "지난 세트를 불러왔어요");
   });
 }
 
@@ -999,9 +1119,13 @@ function openSheet(exercise) {
   selectedName = exercise?.name ?? "";
   pickerOpen = !exercise;
   selectPart(exercise?.part ?? "");
-  if (exercise) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight));
+  editingExercise = exercise;
+  if (exercise?.sets.length) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight));
   else addSetRow();
+  minutesInput.value = exercise && isCardio(exercise) ? exercise.cardio.minutes : "";
+  kmInput.value = exercise && isCardio(exercise) && exercise.cardio.km > 0 ? exercise.cardio.km : "";
   renderPicker();
+  renderInputMode();
   renderHistory();
 
   deleteBtn.hidden = !exercise;
@@ -1193,8 +1317,8 @@ form.addEventListener("keydown", (e) => {
     return;
   }
 
-  // 세트 칸: 다음 칸으로, 마지막 칸이면 저장
-  const inputs = [...setRows.querySelectorAll("input")];
+  // 세트(유산소는 시간·거리) 칸: 다음 칸으로, 마지막 칸이면 저장
+  const inputs = cardioMode() ? [minutesInput, kmInput] : [...setRows.querySelectorAll("input")];
   const next = inputs[inputs.indexOf(e.target) + 1];
   if (next) next.focus();
   else form.requestSubmit();
@@ -1223,6 +1347,8 @@ function readForm() {
   const name = selectedName.trim();
   if (!name) return fail(selectedPart ? "종목을 골라 주세요." : "부위와 종목을 골라 주세요.", $("exerciseField"));
 
+  if (cardioMode()) return readCardio(name);
+
   const sets = [];
   for (const row of setRows.children) {
     const repsEl = row.querySelector('[data-field="reps"]');
@@ -1238,7 +1364,25 @@ function readForm() {
   }
   if (!sets.length) return fail("세트를 하나 이상 입력해 주세요.", setRows.querySelector("input"));
 
-  return { name, part: selectedPart, sets };
+  // cardio: undefined → 유산소였던 기록을 근력으로 바꾸면 저장할 때 시간·거리가 빠짐
+  return { name, part: selectedPart, sets, cardio: undefined };
+}
+
+// 유산소: 시간(분) 필수, 거리(km)는 선택이고 소수점 둘째 자리까지
+function readCardio(name) {
+  const minutes = Number(minutesInput.value);
+  if (minutesInput.value === "" || !Number.isFinite(minutes) || minutes <= 0)
+    return fail("시간(분)을 0보다 크게 입력해 주세요.", minutesInput);
+  if (minutes > 1440) return fail("시간은 1440분(24시간) 이하로 입력해 주세요.", minutesInput);
+
+  let km = null;
+  if (kmInput.value !== "") {
+    km = Number(kmInput.value);
+    if (!Number.isFinite(km) || km <= 0) return fail("거리는 0보다 크게 입력하거나 비워 두세요.", kmInput);
+    if (!/^\d*(\.\d{0,2})?$/.test(kmInput.value.trim()))
+      return fail("거리는 소수점 둘째 자리까지 입력해 주세요.", kmInput);
+  }
+  return { name, part: selectedPart, sets: [], cardio: { minutes, km } };
 }
 
 form.addEventListener("submit", (e) => {
@@ -1249,11 +1393,16 @@ form.addEventListener("submit", (e) => {
 
   saving = true;
   const list = (records[editingDate] ||= []);
+  const { cardio, ...rest } = data;
   if (editingId) {
     const ex = list.find((x) => x.id === editingId);
-    if (ex) Object.assign(ex, data);
+    if (ex) {
+      Object.assign(ex, rest);
+      if (cardio) ex.cardio = cardio;
+      else delete ex.cardio;
+    }
   } else {
-    list.push({ id: newId(), ...data });
+    list.push({ id: newId(), ...rest, ...(cardio && { cardio }) });
   }
 
   if (saveRecords()) {
