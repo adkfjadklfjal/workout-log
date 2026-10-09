@@ -17,13 +17,6 @@
         <h1 class="date-bar__title" id="monthLabel"></h1>
         <button class="icon-btn" id="nextMonth" type="button" aria-label="다음 달">›</button>
       </div>
-      <div class="copy-bar">
-        <p class="copy-bar__guide" id="copyGuide" aria-live="polite"></p>
-        <button class="copy-toggle" id="copyToggle" type="button" aria-pressed="false">
-          <span class="copy-toggle__track" aria-hidden="true"><span class="copy-toggle__thumb"></span></span>
-          기록 복사
-        </button>
-      </div>
     </header>
 
     <main class="content content--calendar">
@@ -38,7 +31,11 @@
           <li>일</li><li>월</li><li>화</li><li>수</li><li>목</li><li>금</li><li>토</li>
         </ol>
         <ol class="calendar__grid" id="calendarGrid"></ol>
+        <!-- 끄는 동안 가장자리에 머물면 달이 넘어감 -->
+        <div class="edge edge--prev" id="edgePrev" aria-hidden="true">‹</div>
+        <div class="edge edge--next" id="edgeNext" aria-hidden="true">›</div>
       </div>
+      <p class="calendar-hint">길게 눌러 끌면 다른 날짜로 복사돼요</p>
       <button class="ghost-btn today-btn" id="todayBtn" type="button">오늘 기록하기</button>
     </main>
   </div>
@@ -130,6 +127,9 @@
       </div>
     </form>
   </section>
+
+  <!-- 끄는 동안 손가락을 따라오는 미리보기 -->
+  <div class="drag-ghost" id="dragGhost" aria-hidden="true"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite">
     <span class="toast__text" id="toastText"></span>

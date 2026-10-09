@@ -131,12 +131,11 @@ function renderCalendar() {
     if (weekday === 0) cls.push("is-sun");
     if (weekday === 6) cls.push("is-sat");
     if (parts.length) cls.push("has-record");
-    if (k === copySource) cls.push("is-source");
+    if (drag?.active && k === drag.fromKey) cls.push("is-drag-source");
+    if (drag?.active && k === drag.overKey) cls.push("is-drop-target");
     if (k === justPasted) cls.push("is-pasted");
 
-    const label = `${formatDate(date)}${parts.length ? `, ${parts.join(", ")}` : ""}${
-      k === copySource ? ", 복사 원본" : ""
-    }`;
+    const label = `${formatDate(date)}${parts.length ? `, ${parts.join(", ")}` : ""}`;
     cells.push(`
       <li class="cal-cell">
         <button type="button" class="${cls.join(" ")}" data-date="${k}" aria-label="${escapeHtml(label)}">
@@ -150,7 +149,6 @@ function renderCalendar() {
   }
   $("calendarGrid").innerHTML = cells.join("");
   justPasted = null; // 붙여넣은 칸 강조는 한 번만
-  renderCopyBar();
   renderPlan();
 }
 
@@ -180,18 +178,25 @@ function renderPlan() {
     : `<li class="plan__empty">운동할 때 부위를 고르면 여기에 정리돼요.</li>`;
 }
 
+// 짧게 누르면 그날 기록 화면으로. 끌어서 놓은 직후 따라오는 click은 무시
+let suppressClickUntil = 0;
 $("calendarGrid").addEventListener("click", (e) => {
+  if (performance.now() < suppressClickUntil) return;
   const btn = e.target.closest(".cal-day");
-  if (!btn) return;
-  if (copyMode) handleCopyClick(btn.dataset.date);
-  else goToDay(btn.dataset.date);
+  if (btn) goToDay(btn.dataset.date);
 });
 
-// ---------- 기록 복사 ----------
-// 1단계: 기록이 있는 날짜를 눌러 원본 선택 → 2단계: 누르는 날짜마다 원본 운동을 뒤에 추가
-// 원본을 다시 누르면 선택 취소, 토글을 끄면 복사 모드 종료
-let copyMode = false;
-let copySource = null; // 원본 날짜 키
+// ---------- 끌어서 복사 ----------
+// 기록 있는 날짜를 길게 누르면(0.4초) 미리보기가 떠오르고, 다른 날짜 칸에 놓으면 그날 운동을 뒤에 추가.
+// 달력 좌우 가장자리에 머물면 이전/다음 달로 넘어감. 달력 밖이나 원래 날짜에 놓으면 아무 일도 없음.
+const LONG_PRESS_MS = 400;
+const MOVE_TOLERANCE = 10; // 길게 누르기 전에 이만큼 움직이면 스크롤로 보고 취소
+const EDGE_ZONE = 8; // 달력 안쪽으로 이 폭(px)까지 + 달력 바깥 여백이 달 넘김 구역
+const EDGE_DELAY = 600; // 가장자리에 머무는 시간
+const EDGE_REPEAT = 900; // 계속 머물면 이 간격으로 한 달씩 더 넘김
+const SCROLL_ZONE = 72; // 화면 위/아래 끝에서 자동 스크롤
+
+let drag = null; // { pointerId, fromKey, startX, startY, x, y, active, overKey, edge, timer, edgeTimer, raf }
 let justPasted = null; // 방금 붙여넣은 날짜 (강조용)
 
 const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -199,41 +204,205 @@ const shortDate = (k) => {
   const d = parseKey(k);
   return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 };
+const vibrate = (ms) => {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {}
+};
 
-function setCopyMode(on) {
-  copyMode = on;
-  copySource = null;
+$("calendarGrid").addEventListener("pointerdown", (e) => {
+  if (drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+  const btn = e.target.closest(".cal-day");
+  if (!btn || !records[btn.dataset.date]?.length) return;
+
+  drag = {
+    pointerId: e.pointerId,
+    pointerType: e.pointerType,
+    fromKey: btn.dataset.date,
+    startX: e.clientX,
+    startY: e.clientY,
+    x: e.clientX,
+    y: e.clientY,
+    active: false,
+    overKey: null,
+    edge: null,
+  };
+  drag.timer = setTimeout(startDrag, LONG_PRESS_MS);
+  window.addEventListener("pointermove", onDragMove);
+  window.addEventListener("pointerup", onDragEnd);
+  window.addEventListener("pointercancel", cancelDrag);
+});
+
+function startDrag() {
+  drag.active = true;
+  // 그리드는 달이 바뀔 때 다시 그려지므로, 바뀌지 않는 화면 요소에 포인터를 묶어 둠
+  try {
+    $("calendarView").setPointerCapture(drag.pointerId);
+  } catch {}
+  vibrate(30);
+  window.getSelection()?.removeAllRanges();
+  document.body.classList.add("is-dragging");
+
+  const list = records[drag.fromKey];
+  const names = list.slice(0, 3).map((ex) => `<li>${escapeHtml(ex.name)}<span>${ex.sets.length}세트</span></li>`);
+  if (list.length > 3) names.push(`<li class="drag-ghost__more">외 ${list.length - 3}종목</li>`);
+  const ghost = $("dragGhost");
+  ghost.innerHTML = `<p class="drag-ghost__date">${shortDate(drag.fromKey)} 기록</p><ul>${names.join("")}</ul>`;
+  ghost.classList.add("is-shown");
+
+  moveGhost();
   renderCalendar();
+  updateDropTarget();
+  drag.raf = requestAnimationFrame(autoScroll);
 }
 
-function renderCopyBar() {
-  $("copyToggle").setAttribute("aria-pressed", String(copyMode));
-  $("calendar").classList.toggle("is-copy", copyMode);
-  $("calendarView").classList.toggle("is-copy", copyMode);
-  $("copyGuide").textContent = !copyMode
-    ? ""
-    : copySource
-      ? `${shortDate(copySource)} 기록을 붙여넣을 날짜를 고르세요`
-      : "복사할 날짜를 고르세요";
+function onDragMove(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+  if (!drag.active) {
+    // 길게 누르기 전에 움직이면 스크롤하려는 것 → 끌기 취소
+    if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) > MOVE_TOLERANCE) cancelDrag();
+    return;
+  }
+  moveGhost();
+  updateEdge();
+  updateDropTarget();
 }
 
-function handleCopyClick(dateKey) {
-  if (!copySource) {
-    if (!records[dateKey]?.length) {
-      showToast("기록이 있는 날짜를 골라 주세요");
-      return;
-    }
-    copySource = dateKey;
-    renderCalendar();
+function onDragEnd(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  if (!drag.active) {
+    finishDrag(); // 짧게 누름 → click 이벤트가 기록 화면으로 보냄
     return;
   }
-  if (dateKey === copySource) {
-    copySource = null; // 원본을 다시 누르면 다른 원본을 고를 수 있게
-    renderCalendar();
-    return;
-  }
-  pasteRecords(copySource, dateKey);
+  const { fromKey, overKey } = drag;
+  suppressClickUntil = performance.now() + 400;
+  finishDrag();
+  if (overKey && overKey !== fromKey) pasteRecords(fromKey, overKey);
 }
+
+function cancelDrag() {
+  if (!drag) return;
+  if (drag.active) suppressClickUntil = performance.now() + 400;
+  finishDrag();
+}
+
+function finishDrag() {
+  const wasActive = drag.active;
+  clearTimeout(drag.timer);
+  clearTimeout(drag.edgeTimer);
+  cancelAnimationFrame(drag.raf);
+  try {
+    $("calendarView").releasePointerCapture(drag.pointerId);
+  } catch {}
+  window.removeEventListener("pointermove", onDragMove);
+  window.removeEventListener("pointerup", onDragEnd);
+  window.removeEventListener("pointercancel", cancelDrag);
+  drag = null;
+
+  document.body.classList.remove("is-dragging");
+  $("dragGhost").classList.remove("is-shown");
+  $("edgePrev").classList.remove("is-active");
+  $("edgeNext").classList.remove("is-active");
+  if (wasActive) renderCalendar();
+}
+
+function moveGhost() {
+  // 손가락에 가리지 않게 터치일 때는 위쪽에 띄우고, 화면 밖으로 나가지 않게 가둠
+  const ghost = $("dragGhost");
+  const w = ghost.offsetWidth;
+  const h = ghost.offsetHeight;
+  const margin = 8;
+  const left = Math.min(Math.max(drag.x - w / 2, margin), innerWidth - w - margin);
+  let top = drag.pointerType === "touch" ? drag.y - 28 - h : drag.y + 16;
+  if (top < margin) top = drag.y + 28; // 위에 자리가 없으면 손가락 아래로
+  ghost.style.transform = `translate(${left}px, ${top}px)`;
+}
+
+// 손가락 아래 날짜 칸 찾아 강조 (원래 날짜·가장자리·달력 밖은 놓을 곳 아님)
+function updateDropTarget() {
+  let k = null;
+  if (!drag.edge) {
+    const cell = document.elementFromPoint(drag.x, drag.y)?.closest("#calendarGrid .cal-day");
+    if (cell && cell.dataset.date !== drag.fromKey) k = cell.dataset.date;
+  }
+  if (k === drag.overKey) return;
+  document.querySelector(".cal-day.is-drop-target")?.classList.remove("is-drop-target");
+  drag.overKey = k;
+  if (k) {
+    document.querySelector(`.cal-day[data-date="${k}"]`)?.classList.add("is-drop-target");
+    vibrate(8);
+  }
+}
+
+function updateEdge() {
+  const rect = $("calendar").getBoundingClientRect();
+  const inRows = drag.y >= rect.top && drag.y <= rect.bottom;
+  const edge = !inRows
+    ? null
+    : drag.x <= rect.left + EDGE_ZONE
+      ? "prev"
+      : drag.x >= rect.right - EDGE_ZONE
+        ? "next"
+        : null;
+  if (edge === drag.edge) return;
+
+  clearTimeout(drag.edgeTimer);
+  drag.edge = edge;
+  $("edgePrev").classList.toggle("is-active", edge === "prev");
+  $("edgeNext").classList.toggle("is-active", edge === "next");
+  if (edge) drag.edgeTimer = setTimeout(flipMonth, EDGE_DELAY);
+}
+
+function flipMonth() {
+  if (!drag?.edge) return;
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + (drag.edge === "prev" ? -1 : 1), 1);
+  renderCalendar();
+  vibrate(15);
+  // 다시 시작하는 효과를 위해 강조를 껐다 켬
+  const el = $(drag.edge === "prev" ? "edgePrev" : "edgeNext");
+  el.classList.remove("is-active");
+  void el.offsetWidth;
+  el.classList.add("is-active");
+  drag.edgeTimer = setTimeout(flipMonth, EDGE_REPEAT);
+}
+
+// 화면 위/아래 끝으로 끌면 천천히 스크롤 (끄는 동안 손으로는 스크롤이 막혀 있으므로)
+function autoScroll() {
+  if (!drag?.active) return;
+  let dy = 0;
+  if (drag.y < SCROLL_ZONE) dy = -Math.ceil((SCROLL_ZONE - drag.y) / 6);
+  else if (drag.y > innerHeight - SCROLL_ZONE) dy = Math.ceil((drag.y - (innerHeight - SCROLL_ZONE)) / 6);
+  if (dy) {
+    window.scrollBy(0, dy);
+    updateEdge();
+    updateDropTarget();
+  }
+  drag.raf = requestAnimationFrame(autoScroll);
+}
+
+// 끄는 동안(또는 길게 누르는 중) 스크롤·글자 선택·길게 누르기 메뉴 막기
+window.addEventListener(
+  "touchmove",
+  (e) => {
+    if (drag?.active) e.preventDefault();
+  },
+  { passive: false }
+);
+document.addEventListener("selectstart", (e) => {
+  if (drag) e.preventDefault();
+});
+$("calendarGrid").addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("contextmenu", (e) => {
+  if (drag?.active) e.preventDefault();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && drag) cancelDrag();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && drag) cancelDrag();
+});
 
 function pasteRecords(fromKey, toKey) {
   const source = records[fromKey] || [];
@@ -255,7 +424,7 @@ function pasteRecords(fromKey, toKey) {
   renderCalendar();
 
   const ids = copies.map((c) => c.id);
-  showToast(`${shortDate(toKey)}에 ${copies.length}종목을 붙여넣었어요`, {
+  showToast(`${shortDate(toKey)}에 ${copies.length}종목을 복사했어요`, {
     duration: 5000,
     action: {
       label: "되돌리기",
@@ -263,7 +432,7 @@ function pasteRecords(fromKey, toKey) {
         removeByIds(toKey, ids);
         saveRecords();
         renderCalendar();
-        showToast("붙여넣기를 취소했어요");
+        showToast("복사를 취소했어요");
       },
     },
   });
@@ -277,8 +446,6 @@ function removeByIds(dateKey, ids) {
   if (rest.length) records[dateKey] = rest;
   else delete records[dateKey];
 }
-
-$("copyToggle").addEventListener("click", () => setCopyMode(!copyMode));
 
 $("prevMonth").addEventListener("click", () => {
   calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);

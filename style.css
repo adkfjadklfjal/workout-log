@@ -541,69 +541,7 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 
 .today-btn { margin-top: 16px; height: 52px; }
 
-/* ---------- 기록 복사 ---------- */
-.copy-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-.copy-bar__guide {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--green-dark);
-}
-
-.copy-toggle {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 4px 0 2px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-sub);
-}
-.copy-toggle__track {
-  position: relative;
-  width: 40px; height: 24px;
-  border-radius: 999px;
-  background: #d5dcd8;
-  transition: background 0.15s;
-}
-.copy-toggle__thumb {
-  position: absolute;
-  top: 3px; left: 3px;
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: transform 0.15s;
-}
-.copy-toggle[aria-pressed="true"] { color: var(--green-dark); }
-.copy-toggle[aria-pressed="true"] .copy-toggle__track { background: var(--green); }
-.copy-toggle[aria-pressed="true"] .copy-toggle__thumb { transform: translateX(16px); }
-
-/* 복사 모드에서는 달력 테두리로 상태를 알리고, 기록 없는 날은 원본 선택 전까지 흐리게 */
-.calendar { transition: box-shadow 0.15s; }
-.calendar.is-copy { box-shadow: 0 0 0 2px var(--green); }
-#calendarView.is-copy .today-btn { display: none; }
-.calendar.is-copy:not(:has(.is-source)) .cal-day:not(.has-record) { opacity: 0.4; }
-
-.cal-day.is-source {
-  background: var(--green-soft);
-  box-shadow: inset 0 0 0 2px var(--green);
-}
-.cal-day.is-source::after {
-  content: "원본";
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--green-dark);
-}
+/* 방금 복사된 칸 */
 .cal-day.is-pasted { animation: pasted 0.9s ease-out; }
 @keyframes pasted {
   from { background: rgba(22, 163, 74, 0.35); }
@@ -630,3 +568,87 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 }
 .toast__action:active { background: rgba(255, 255, 255, 0.12); }
 .toast__action[hidden] { display: none; }
+
+/* ---------- 끌어서 복사 ---------- */
+/* 길게 누를 때 글자 선택·iOS 길게 누르기 메뉴가 뜨지 않게 */
+.cal-day {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.calendar { position: relative; }
+.calendar-hint {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+body.is-dragging { cursor: grabbing; -webkit-user-select: none; user-select: none; }
+
+.cal-day.is-drag-source { opacity: 0.45; }
+.cal-day.is-drop-target {
+  background: var(--green-soft);
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+.cal-day.is-drop-target .cal-day__num { transform: scale(1.12); transition: transform 0.1s; }
+
+.drag-ghost {
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 50;
+  min-width: 132px;
+  max-width: 200px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18), 0 0 0 2px var(--green);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+.drag-ghost.is-shown { opacity: 0.96; visibility: visible; animation: lift 0.15s ease-out; }
+@keyframes lift { from { opacity: 0; scale: 0.9; } }
+.drag-ghost__date { font-size: 12px; font-weight: 700; color: var(--green-dark); margin-bottom: 4px; }
+.drag-ghost li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.drag-ghost li span { font-weight: 400; color: var(--text-sub); }
+.drag-ghost .drag-ghost__more { color: var(--text-sub); font-weight: 400; }
+
+/* 가장자리 달 넘김 표시: 끄는 동안만 보이고, 머무르면 채워지면서 넘어감 */
+.edge {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--green-dark);
+  background: rgba(22, 163, 74, 0.08);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 0.15s;
+}
+.edge--prev { left: -16px; border-radius: 12px 0 0 12px; }
+.edge--next { right: -16px; border-radius: 0 12px 12px 0; }
+body.is-dragging .edge { opacity: 1; visibility: visible; }
+.edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(22, 163, 74, 0.28);
+  transform: scaleY(0);
+  transform-origin: bottom;
+}
+.edge.is-active::before { animation: edge-fill 0.6s linear forwards; }
+@keyframes edge-fill { to { transform: scaleY(1); } }
