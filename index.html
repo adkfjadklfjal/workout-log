@@ -69,6 +69,11 @@
         </div>
       </div>
 
+      <div class="rest-setting" role="group" aria-labelledby="restSettingLabel">
+        <span class="rest-setting__label" id="restSettingLabel">세트 완료 후 휴식</span>
+        <div class="rest-setting__options" id="restOptions"></div>
+      </div>
+
       <ul class="workout-list" id="workoutList"></ul>
 
       <p class="empty" id="emptyState" hidden>아직 기록한 운동이 없어요.<br>아래 버튼으로 운동을 추가해 보세요.</p>
@@ -81,6 +86,23 @@
         운동 추가
       </button>
     </footer>
+  </div>
+
+  <!-- 휴식 타이머: 화면 아래 고정 막대 -->
+  <div class="rest-timer" id="restTimer" role="timer" aria-label="휴식 타이머" hidden>
+    <div class="rest-timer__fill" id="restFill"></div>
+    <div class="rest-timer__body">
+      <div class="rest-timer__info">
+        <span class="rest-timer__label" id="restLabel">휴식</span>
+        <strong class="rest-timer__time" id="restTime">1:30</strong>
+      </div>
+      <div class="rest-timer__actions">
+        <button class="rest-btn" id="restMinus" type="button" aria-label="30초 줄이기">−30초</button>
+        <button class="rest-btn" id="restPlus" type="button" aria-label="30초 늘리기">+30초</button>
+        <button class="rest-btn rest-btn--skip" id="restSkip" type="button">건너뛰기</button>
+      </div>
+    </div>
+    <p class="sr-only" id="restAnnounce" aria-live="assertive"></p>
   </div>
 
   <!-- 운동 추가/수정 시트 -->

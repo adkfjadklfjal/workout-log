@@ -844,3 +844,120 @@ body.is-dragging .trash { transform: translateY(0); }
 }
 .cardio-note[hidden] { display: none; }
 .history__cardio { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- 세트 완료 체크 ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.sets--check th:last-child,
+.sets--check td:last-child { width: 52px; }
+.set-check {
+  width: 40px; height: 40px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #cfd8d3;
+  color: transparent;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s;
+}
+.set-check:active { transform: scale(0.9); }
+.set-check[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: #fff; }
+.set-check:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.sets tr.is-done td:not(:last-child) { color: var(--text-sub); }
+.sets tr.is-done td:nth-child(2),
+.sets tr.is-done td:nth-child(3) { text-decoration: line-through; text-decoration-color: rgba(22, 163, 74, 0.5); }
+.stat--done { background: var(--green-soft); color: var(--green-dark); }
+.stat--done strong { color: var(--green-dark); }
+
+/* ---------- 휴식 시간 선택 ---------- */
+.rest-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+.rest-setting__label { font-size: 13px; color: var(--text-sub); white-space: nowrap; }
+.rest-setting__options { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface); }
+.rest-option {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+}
+.rest-option[aria-pressed="true"] { background: var(--green); color: #fff; }
+
+/* ---------- 휴식 타이머 막대 ---------- */
+.rest-timer {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 15;
+  width: calc(100% - 32px);
+  max-width: 448px;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #17201b;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  animation: rest-in 0.2s ease-out;
+  transition: background 0.3s;
+}
+.rest-timer[hidden] { display: none; }
+@keyframes rest-in { from { transform: translateY(16px); opacity: 0; } }
+/* 기록 화면에서는 '운동 추가' 버튼 바로 위 */
+#dayView:not([hidden]) ~ .rest-timer { bottom: calc(90px + env(safe-area-inset-bottom)); }
+
+.rest-timer__fill {
+  position: absolute;
+  inset: 0;
+  background: rgba(22, 163, 74, 0.45);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.25s linear;
+}
+.rest-timer__body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+}
+.rest-timer__info { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rest-timer__label { font-size: 13px; opacity: 0.8; white-space: nowrap; }
+.rest-timer__time { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rest-timer__actions { display: flex; gap: 4px; flex: none; }
+.rest-btn {
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rest-btn:active { background: rgba(255, 255, 255, 0.26); }
+.rest-btn:disabled { opacity: 0.35; }
+.rest-btn--skip { background: rgba(255, 255, 255, 0.92); color: #17201b; }
+
+/* 끝나면 주황으로 바뀌고 살짝 깜빡임 */
+.rest-timer.is-done { background: #ea580c; animation: rest-done 1s ease-in-out 3; }
+.rest-timer.is-done .rest-timer__fill { background: rgba(255, 255, 255, 0.18); }
+.rest-timer.is-done .rest-timer__time { font-size: 17px; }
+.rest-timer.is-done .rest-btn--skip { color: #ea580c; }
+@keyframes rest-done { 50% { transform: scale(1.03); } }
+
+/* 타이머가 떠 있으면 마지막 카드·토스트가 가리지 않게 */
+body.rest-on .content { padding-bottom: calc(184px + env(safe-area-inset-bottom)); }
+body.rest-on .content--calendar { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.rest-on .toast { bottom: calc(160px + env(safe-area-inset-bottom)); }

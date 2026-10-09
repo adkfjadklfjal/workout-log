@@ -566,6 +566,8 @@ function renderList() {
       const rm = isCardioPart(ex) ? null : best1RM(ex.sets); // 유산소는 1RM 없음
       const prev = findLastRecord(ex.name, dateKey);
       const pace = isCardio(ex) ? formatPace(ex.cardio.minutes, ex.cardio.km) : null;
+      const checkable = !isCardioPart(ex); // 유산소 카드에는 세트 완료 체크 없음
+      const doneCount = ex.sets.filter((s) => s.done).length;
       return `
     <li class="swipe" data-id="${escapeHtml(ex.id)}">
     <button class="swipe__delete" type="button" tabindex="-1" aria-label="${escapeHtml(ex.name)} 삭제">
@@ -583,6 +585,11 @@ function renderList() {
       <div class="card__stats">
         ${rm !== null ? `<span class="stat">추정 1RM <strong>${format1RM(rm)}</strong></span>` : ""}
         ${
+          checkable && doneCount
+            ? `<span class="stat${doneCount === ex.sets.length ? " stat--done" : ""}">완료 <strong>${doneCount}/${ex.sets.length}</strong></span>`
+            : ""
+        }
+        ${
           prev
             ? `<span class="stat">직전 기록 <strong>${formatDaysAgo(daysBetween(prev.date, dateKey))}</strong></span>`
             : `<span class="stat stat--first">첫 기록</span>`
@@ -595,13 +602,17 @@ function renderList() {
         <div><dt>거리</dt><dd>${ex.cardio.km > 0 ? formatKm(ex.cardio.km) : "—"}</dd></div>
         <div><dt>페이스</dt><dd>${pace ? `${pace}<span class="unit">/km</span>` : "—"}</dd></div>
       </dl>`
-          : `<table class="sets">
-        <thead><tr><th>세트</th><th>횟수</th><th>무게</th></tr></thead>
+          : `<table class="sets${checkable ? " sets--check" : ""}">
+        <thead><tr><th>세트</th><th>횟수</th><th>무게</th>${checkable ? `<th><span class="sr-only">완료</span></th>` : ""}</tr></thead>
         <tbody>
           ${ex.sets
             .map(
               (s, i) =>
-                `<tr><td>${i + 1}</td><td>${formatNum(s.reps)}<span class="unit">회</span></td><td>${formatNum(s.weight)}<span class="unit">kg</span></td></tr>`
+                `<tr class="${s.done ? "is-done" : ""}"><td>${i + 1}</td><td>${formatNum(s.reps)}<span class="unit">회</span></td><td>${formatNum(s.weight)}<span class="unit">kg</span></td>${
+                  checkable
+                    ? `<td><button type="button" class="set-check" data-index="${i}" aria-pressed="${!!s.done}" aria-label="${i + 1}세트 완료"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></td>`
+                    : ""
+                }</tr>`
             )
             .join("")}
         </tbody>
@@ -1064,9 +1075,11 @@ function renderHistory() {
 }
 
 
-function addSetRow(reps = "", weight = "") {
+// done: 기록 화면에서 완료 체크한 세트 (수정해도 완료 표시 유지)
+function addSetRow(reps = "", weight = "", done = false) {
   const li = document.createElement("li");
   li.className = "set-row";
+  if (done) li.dataset.done = "1";
   li.innerHTML = `
     <span class="set-row__no"></span>
     <input class="input" data-field="reps" type="number" inputmode="numeric" min="1" step="1" placeholder="0" aria-label="횟수" enterkeyhint="next">
@@ -1120,7 +1133,7 @@ function openSheet(exercise) {
   pickerOpen = !exercise;
   selectPart(exercise?.part ?? "");
   editingExercise = exercise;
-  if (exercise?.sets.length) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight));
+  if (exercise?.sets.length) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight, s.done));
   else addSetRow();
   minutesInput.value = exercise && isCardio(exercise) ? exercise.cardio.minutes : "";
   kmInput.value = exercise && isCardio(exercise) && exercise.cardio.km > 0 ? exercise.cardio.km : "";
@@ -1165,8 +1178,199 @@ $("workoutList").addEventListener("click", (e) => {
     setSwipeOpen(null);
     return;
   }
+  const check = e.target.closest(".set-check");
+  if (check) {
+    toggleSetDone(card.dataset.id, Number(check.dataset.index));
+    return;
+  }
   openCard(card);
 });
+
+// ---------- 휴식 타이머 ----------
+// 끝나는 시각(endAt)을 저장해 두고 매번 "지금"과 비교 → 화면을 끄거나 다른 앱에 다녀와도 남은 시간이 맞음.
+// 새로고침이나 브라우저가 탭을 다시 열어도 이어지도록 localStorage에도 보관.
+const REST_OPTIONS = [60, 90, 120, 180];
+const REST_SECONDS_KEY = "workout-rest-seconds-v1";
+const REST_TIMER_KEY = "workout-rest-timer-v1";
+const REST_KEEP_DONE_MS = 60_000; // 끝난 뒤 막대를 보여 주는 시간
+
+let restSeconds = (() => {
+  try {
+    const v = Number(localStorage.getItem(REST_SECONDS_KEY));
+    return REST_OPTIONS.includes(v) ? v : 90;
+  } catch {
+    return 90;
+  }
+})();
+let rest = null; // { endAt, total, notified }
+let restTick = null;
+let audioCtx = null;
+
+function renderRestOptions() {
+  $("restOptions").innerHTML = REST_OPTIONS.map(
+    (s) =>
+      `<button type="button" class="rest-option" data-seconds="${s}" aria-pressed="${s === restSeconds}">${s}초</button>`
+  ).join("");
+}
+$("restOptions").addEventListener("click", (e) => {
+  const btn = e.target.closest(".rest-option");
+  if (!btn) return;
+  restSeconds = Number(btn.dataset.seconds);
+  try {
+    localStorage.setItem(REST_SECONDS_KEY, String(restSeconds));
+  } catch {}
+  renderRestOptions();
+});
+
+function saveRest() {
+  try {
+    if (rest) localStorage.setItem(REST_TIMER_KEY, JSON.stringify(rest));
+    else localStorage.removeItem(REST_TIMER_KEY);
+  } catch {}
+}
+
+// 소리는 사용자가 누른 순간에 오디오를 깨워 둬야 나중에 울릴 수 있음
+function unlockAudio() {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch {}
+}
+
+function playBeeps() {
+  if (!audioCtx) return;
+  try {
+    const t0 = audioCtx.currentTime + 0.05;
+    [0, 0.25, 0.5].forEach((offset, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = i === 2 ? 1175 : 880;
+      gain.gain.setValueAtTime(0.0001, t0 + offset);
+      gain.gain.exponentialRampToValueAtTime(0.35, t0 + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.18);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + offset);
+      osc.stop(t0 + offset + 0.2);
+    });
+  } catch {}
+}
+
+function startRestTimer(seconds = restSeconds) {
+  unlockAudio();
+  rest = { endAt: Date.now() + seconds * 1000, total: seconds * 1000, notified: false };
+  saveRest();
+  runRestTick();
+}
+
+function adjustRest(deltaSec) {
+  if (!rest) return;
+  const remaining = rest.endAt - Date.now();
+  if (remaining <= 0) {
+    // 끝난 뒤 +30초는 30초 휴식을 새로 시작
+    if (deltaSec > 0) startRestTimer(deltaSec);
+    return;
+  }
+  rest.endAt += deltaSec * 1000;
+  rest.total = Math.max(rest.total + deltaSec * 1000, 1000);
+  saveRest();
+  runRestTick();
+}
+
+function stopRest() {
+  rest = null;
+  saveRest();
+  clearInterval(restTick);
+  restTick = null;
+  renderRest();
+}
+
+function runRestTick() {
+  clearInterval(restTick);
+  restTick = setInterval(renderRest, 250);
+  renderRest();
+}
+
+const formatClock = (ms) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
+function renderRest() {
+  const bar = $("restTimer");
+  document.body.classList.toggle("rest-on", !!rest);
+  if (!rest) {
+    bar.hidden = true;
+    return;
+  }
+  const now = Date.now();
+  const remaining = rest.endAt - now;
+  const done = remaining <= 0;
+
+  if (done && now - rest.endAt > REST_KEEP_DONE_MS) {
+    stopRest(); // 끝나고 한참 지났으면 막대 정리
+    return;
+  }
+  if (done && !rest.notified) {
+    rest.notified = true;
+    saveRest();
+    // 오래전에 끝난 걸 나중에 알게 된 경우(앱에 돌아옴)에도 한 번은 알려 줌
+    playBeeps();
+    vibrate([200, 100, 200, 100, 300]);
+    $("restAnnounce").textContent = "휴식 끝! 다음 세트를 시작하세요";
+  }
+
+  bar.hidden = false;
+  bar.classList.toggle("is-done", done);
+  $("restLabel").textContent = done ? "휴식 끝!" : "휴식";
+  $("restTime").textContent = done ? "다음 세트" : formatClock(remaining);
+  $("restFill").style.transform = `scaleX(${done ? 1 : Math.min(1, Math.max(0, 1 - remaining / rest.total))})`;
+  $("restMinus").disabled = done;
+  $("restSkip").textContent = done ? "닫기" : "건너뛰기";
+}
+
+$("restMinus").addEventListener("click", () => adjustRest(-30));
+$("restPlus").addEventListener("click", () => {
+  unlockAudio();
+  adjustRest(30);
+});
+$("restSkip").addEventListener("click", stopRest);
+
+// 다른 앱에 다녀오거나 화면을 다시 켜면 바로 다시 계산 (숨겨진 동안은 브라우저가 타이머를 늦출 수 있음)
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && rest) runRestTick();
+});
+window.addEventListener("pageshow", () => {
+  if (rest) runRestTick();
+});
+
+// 새로고침 후에도 진행 중이던 타이머 이어가기
+try {
+  const saved = JSON.parse(localStorage.getItem(REST_TIMER_KEY));
+  if (saved && saved.endAt > 0 && saved.total > 0) {
+    rest = saved;
+    runRestTick();
+  }
+} catch {}
+renderRestOptions();
+
+// ---------- 세트 완료 체크 ----------
+// 체크하면 기록에 done: true 저장 + 휴식 타이머 시작, 다시 누르면 해제
+function toggleSetDone(id, index) {
+  const ex = (records[key(selected)] || []).find((x) => x.id === id);
+  const set = ex?.sets[index];
+  if (!set) return;
+  if (set.done) delete set.done;
+  else set.done = true;
+  if (!saveRecords()) return;
+  renderList();
+  // 다시 그려진 같은 버튼에 포커스를 돌려 키보드로 이어서 체크할 수 있게
+  document.querySelector(`.card[data-id="${CSS.escape(id)}"] .set-check[data-index="${index}"]`)?.focus();
+  if (set.done) {
+    vibrate(15);
+    startRestTimer();
+  }
+}
 $("workoutList").addEventListener("keydown", (e) => {
   if (!e.target.classList.contains("card")) return;
   if (e.key === "Enter" || e.key === " ") {
@@ -1360,7 +1564,7 @@ function readForm() {
     if (!Number.isInteger(reps) || reps < 1) return fail("횟수는 1 이상의 정수로 입력해 주세요.", repsEl);
     const weight = weightEl.value === "" ? 0 : Number(weightEl.value);
     if (!Number.isFinite(weight) || weight < 0) return fail("무게는 0 이상으로 입력해 주세요.", weightEl);
-    sets.push({ reps, weight });
+    sets.push(row.dataset.done ? { reps, weight, done: true } : { reps, weight });
   }
   if (!sets.length) return fail("세트를 하나 이상 입력해 주세요.", setRows.querySelector("input"));
 
