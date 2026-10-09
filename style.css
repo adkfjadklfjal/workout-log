@@ -345,3 +345,63 @@ body.sheet-open .sheet { transform: translateY(0); visibility: visible; }
 .danger-btn[hidden] { display: none; }
 
 .toast { z-index: 40; }
+
+/* ---------- 종목 추천 ---------- */
+.suggest {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 10px;
+  scrollbar-width: none;
+}
+.suggest::-webkit-scrollbar { display: none; }
+.suggest:empty { display: none; }
+.suggest__item {
+  flex: none;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.suggest__item:active { background: var(--green-soft); border-color: var(--green); }
+.suggest__item mark { background: none; color: var(--green-dark); font-weight: 700; }
+
+/* ---------- 지난 기록 ---------- */
+.history {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--green-soft);
+}
+.history[hidden] { display: none; }
+.history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.history__title { font-size: 13px; font-weight: 600; color: var(--green-dark); }
+.history__date { font-weight: 400; color: var(--text-sub); margin-left: 4px; }
+.history__sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.history__sets li span { color: var(--text-sub); font-size: 12px; margin-right: 4px; }
+.history__apply {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 600;
+}
+.history__apply:active { background: var(--green); color: #fff; }

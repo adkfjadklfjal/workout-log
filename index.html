@@ -60,10 +60,12 @@
       </div>
 
       <div class="sheet__body">
-        <label class="field">
-          <span class="field__label">종목</span>
+        <div class="field">
+          <label class="field__label" for="nameInput">종목</label>
           <input class="input" id="nameInput" type="text" placeholder="예: 벤치프레스" autocomplete="off" enterkeyhint="next">
-        </label>
+          <div class="suggest" id="suggestList" aria-label="최근 종목"></div>
+          <div class="history" id="historyBox" hidden></div>
+        </div>
 
         <div class="field">
           <span class="field__label">부위 <span class="field__hint">(선택)</span></span>

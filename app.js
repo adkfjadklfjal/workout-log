@@ -165,6 +165,111 @@ function selectPart(part) {
   });
 }
 
+// ---------- 종목 추천 / 지난 기록 ----------
+const normalize = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
+const parseKey = (k) => {
+  const [y, m, d] = k.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// 지금까지 쓴 종목 목록 (최근에 한 종목이 앞으로, 부위는 마지막 기록 기준)
+function knownExercises() {
+  const map = new Map();
+  for (const date of Object.keys(records).sort()) {
+    for (const ex of records[date]) {
+      map.set(normalize(ex.name), { name: ex.name, part: ex.part, date });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// 같은 종목의 가장 최근 기록 (지금 수정 중인 기록과 이후 날짜는 제외)
+function findLastRecord(name) {
+  const target = normalize(name);
+  if (!target) return null;
+  const dates = Object.keys(records)
+    .filter((d) => d <= editingDate)
+    .sort()
+    .reverse();
+  for (const date of dates) {
+    const list = records[date];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const ex = list[i];
+      if (ex.id !== editingId && normalize(ex.name) === target) return { date, ex };
+    }
+  }
+  return null;
+}
+
+function renderSuggestions() {
+  const raw = nameInput.value.trim();
+  const q = normalize(raw);
+  const items = knownExercises()
+    .filter((x) => normalize(x.name) !== q && normalize(x.name).includes(q))
+    .slice(0, 8);
+
+  $("suggestList").innerHTML = items
+    .map((x) => {
+      const i = raw ? x.name.toLowerCase().indexOf(raw.toLowerCase()) : -1;
+      const label =
+        i === -1
+          ? escapeHtml(x.name)
+          : escapeHtml(x.name.slice(0, i)) +
+            `<mark>${escapeHtml(x.name.slice(i, i + raw.length))}</mark>` +
+            escapeHtml(x.name.slice(i + raw.length));
+      return `<button type="button" class="suggest__item" data-name="${escapeHtml(x.name)}" data-part="${escapeHtml(x.part || "")}">${label}</button>`;
+    })
+    .join("");
+}
+
+function renderHistory() {
+  const box = $("historyBox");
+  const last = findLastRecord(nameInput.value);
+  if (!last) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="history__head">
+      <p class="history__title">지난 기록<span class="history__date">${formatDate(parseKey(last.date))}</span></p>
+      <button type="button" class="history__apply" id="applyHistory">세트 불러오기</button>
+    </div>
+    <ol class="history__sets">
+      ${last.ex.sets
+        .map((s, i) => `<li><span>${i + 1}세트</span>${formatNum(s.weight)}kg × ${formatNum(s.reps)}회</li>`)
+        .join("")}
+    </ol>`;
+  $("applyHistory").addEventListener("click", () => {
+    setRows.innerHTML = "";
+    last.ex.sets.forEach((s) => addSetRow(s.reps, s.weight));
+    if (!selectedPart && last.ex.part) selectPart(last.ex.part);
+    clearError();
+    showToast("지난 세트를 불러왔어요");
+  });
+}
+
+function updateNameHelpers() {
+  renderSuggestions();
+  renderHistory();
+}
+
+// input 이벤트는 한글 조합 중에도 발생하므로 글자를 치는 동안 바로 걸러짐
+nameInput.addEventListener("input", () => {
+  nameInput.classList.remove("is-invalid");
+  updateNameHelpers();
+});
+
+$("suggestList").addEventListener("click", (e) => {
+  const item = e.target.closest(".suggest__item");
+  if (!item) return;
+  nameInput.value = item.dataset.name;
+  if (!selectedPart && item.dataset.part) selectPart(item.dataset.part);
+  updateNameHelpers();
+  setRows.querySelector('[data-field="reps"]')?.focus();
+});
+
 function addSetRow(reps = "", weight = "") {
   const li = document.createElement("li");
   li.className = "set-row";
@@ -220,6 +325,7 @@ function openSheet(exercise) {
   selectPart(exercise?.part ?? "");
   if (exercise) exercise.sets.forEach((s) => addSetRow(s.reps, s.weight));
   else addSetRow();
+  updateNameHelpers();
 
   deleteBtn.hidden = !exercise;
   disarmDelete();
