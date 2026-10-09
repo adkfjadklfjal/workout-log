@@ -130,8 +130,13 @@ function renderCalendar() {
     if (k === todayKey) cls.push("is-today");
     if (weekday === 0) cls.push("is-sun");
     if (weekday === 6) cls.push("is-sat");
+    if (parts.length) cls.push("has-record");
+    if (k === copySource) cls.push("is-source");
+    if (k === justPasted) cls.push("is-pasted");
 
-    const label = `${formatDate(date)}${parts.length ? `, ${parts.join(", ")}` : ""}`;
+    const label = `${formatDate(date)}${parts.length ? `, ${parts.join(", ")}` : ""}${
+      k === copySource ? ", 복사 원본" : ""
+    }`;
     cells.push(`
       <li class="cal-cell">
         <button type="button" class="${cls.join(" ")}" data-date="${k}" aria-label="${escapeHtml(label)}">
@@ -144,6 +149,8 @@ function renderCalendar() {
       </li>`);
   }
   $("calendarGrid").innerHTML = cells.join("");
+  justPasted = null; // 붙여넣은 칸 강조는 한 번만
+  renderCopyBar();
   renderPlan();
 }
 
@@ -175,8 +182,103 @@ function renderPlan() {
 
 $("calendarGrid").addEventListener("click", (e) => {
   const btn = e.target.closest(".cal-day");
-  if (btn) goToDay(btn.dataset.date);
+  if (!btn) return;
+  if (copyMode) handleCopyClick(btn.dataset.date);
+  else goToDay(btn.dataset.date);
 });
+
+// ---------- 기록 복사 ----------
+// 1단계: 기록이 있는 날짜를 눌러 원본 선택 → 2단계: 누르는 날짜마다 원본 운동을 뒤에 추가
+// 원본을 다시 누르면 선택 취소, 토글을 끄면 복사 모드 종료
+let copyMode = false;
+let copySource = null; // 원본 날짜 키
+let justPasted = null; // 방금 붙여넣은 날짜 (강조용)
+
+const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const shortDate = (k) => {
+  const d = parseKey(k);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+};
+
+function setCopyMode(on) {
+  copyMode = on;
+  copySource = null;
+  renderCalendar();
+}
+
+function renderCopyBar() {
+  $("copyToggle").setAttribute("aria-pressed", String(copyMode));
+  $("calendar").classList.toggle("is-copy", copyMode);
+  $("calendarView").classList.toggle("is-copy", copyMode);
+  $("copyGuide").textContent = !copyMode
+    ? ""
+    : copySource
+      ? `${shortDate(copySource)} 기록을 붙여넣을 날짜를 고르세요`
+      : "복사할 날짜를 고르세요";
+}
+
+function handleCopyClick(dateKey) {
+  if (!copySource) {
+    if (!records[dateKey]?.length) {
+      showToast("기록이 있는 날짜를 골라 주세요");
+      return;
+    }
+    copySource = dateKey;
+    renderCalendar();
+    return;
+  }
+  if (dateKey === copySource) {
+    copySource = null; // 원본을 다시 누르면 다른 원본을 고를 수 있게
+    renderCalendar();
+    return;
+  }
+  pasteRecords(copySource, dateKey);
+}
+
+function pasteRecords(fromKey, toKey) {
+  const source = records[fromKey] || [];
+  if (!source.length) return;
+  // 새 id로 깊은 복사 → 원본과 따로 수정·삭제됨
+  const copies = source.map((ex) => ({
+    id: newId(),
+    name: ex.name,
+    part: ex.part,
+    sets: ex.sets.map((s) => ({ reps: s.reps, weight: s.weight })),
+  }));
+  (records[toKey] ||= []).push(...copies); // 기존 기록 뒤에 추가
+  if (!saveRecords()) {
+    removeByIds(toKey, copies.map((c) => c.id));
+    renderCalendar();
+    return;
+  }
+  justPasted = toKey;
+  renderCalendar();
+
+  const ids = copies.map((c) => c.id);
+  showToast(`${shortDate(toKey)}에 ${copies.length}종목을 붙여넣었어요`, {
+    duration: 5000,
+    action: {
+      label: "되돌리기",
+      onClick: () => {
+        removeByIds(toKey, ids);
+        saveRecords();
+        renderCalendar();
+        showToast("붙여넣기를 취소했어요");
+      },
+    },
+  });
+}
+
+// 붙여넣은 기록만 골라서 지움 (그 사이 다른 기록이 바뀌어도 안전)
+function removeByIds(dateKey, ids) {
+  const list = records[dateKey];
+  if (!list) return;
+  const rest = list.filter((ex) => !ids.includes(ex.id));
+  if (rest.length) records[dateKey] = rest;
+  else delete records[dateKey];
+}
+
+$("copyToggle").addEventListener("click", () => setCopyMode(!copyMode));
 
 $("prevMonth").addEventListener("click", () => {
   calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);
@@ -296,14 +398,33 @@ function route() {
 window.addEventListener("hashchange", route);
 
 // ---------- 토스트 ----------
+// action: { label, onClick } 을 주면 버튼이 붙은 토스트 (되돌리기 등)
 let toastTimer;
-function showToast(message) {
+let toastActionHandler = null;
+
+function hideToast() {
+  $("toast").classList.remove("is-shown", "has-action");
+  toastActionHandler = null;
+}
+
+function showToast(message, { duration = 1800, action = null } = {}) {
   const toast = $("toast");
-  toast.textContent = message;
+  const btn = $("toastAction");
+  $("toastText").textContent = message;
+  btn.hidden = !action;
+  btn.textContent = action?.label ?? "";
+  toastActionHandler = action?.onClick ?? null;
+  toast.classList.toggle("has-action", !!action);
   toast.classList.add("is-shown");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("is-shown"), 1800);
+  toastTimer = setTimeout(hideToast, duration);
 }
+
+$("toastAction").addEventListener("click", () => {
+  const handler = toastActionHandler;
+  hideToast(); // 두 번 눌러도 한 번만 실행
+  handler?.();
+});
 
 // ---------- 추가/수정 시트 ----------
 const form = $("exerciseForm");
@@ -581,7 +702,7 @@ form.addEventListener("submit", (e) => {
     const ex = list.find((x) => x.id === editingId);
     if (ex) Object.assign(ex, data);
   } else {
-    list.push({ id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, ...data });
+    list.push({ id: newId(), ...data });
   }
 
   if (saveRecords()) {
